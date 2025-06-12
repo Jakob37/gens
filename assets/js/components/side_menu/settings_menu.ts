@@ -103,6 +103,12 @@ template.innerHTML = String.raw`
     </flex-row>
   </flex-row>
   <div id="tracks-overview"></div>
+  <div class="header-row">
+    <div class="header">Greeting name</div>
+  </div>
+  <flex-row class="row">
+    <input id="greeting-input" type="text">
+  </flex-row>
 `;
 
 export class SettingsMenu extends ShadowBaseElement {
@@ -130,6 +136,9 @@ export class SettingsMenu extends ShadowBaseElement {
   private onRemoveSample: (sample: Sample) => void;
   private getTrackHeights: () => TrackHeights;
   private setTrackHeights: (sizes: TrackHeights) => void;
+  private getGreetingName: () => string;
+  private setGreetingName: (name: string) => void;
+  private greetingInput: HTMLInputElement;
 
   public isInitialized: boolean = false;
 
@@ -169,6 +178,8 @@ export class SettingsMenu extends ShadowBaseElement {
 
     this.getTrackHeights = () => session.getTrackHeights();
     this.setTrackHeights = setTrackHeights;
+    this.getGreetingName = () => session.getGreetingName();
+    this.setGreetingName = (name: string) => session.setGreetingName(name);
   }
 
   connectedCallback() {
@@ -189,6 +200,9 @@ export class SettingsMenu extends ShadowBaseElement {
     this.dotTrackExpandedHeightElem = this.root.querySelector(
       "#dot-expanded-height",
     );
+
+    this.greetingInput = this.root.querySelector("#greeting-input");
+    this.greetingInput.value = this.getGreetingName();
 
     const trackSizes = this.getTrackHeights();
 
@@ -230,6 +244,10 @@ export class SettingsMenu extends ShadowBaseElement {
       this.setTrackHeights(myGetTrackHeights());
       this.render({});
     });
+
+    this.addElementListener(this.greetingInput, "input", () => {
+      this.setGreetingName(this.greetingInput.value);
+    });
   }
 
   initialize() {
@@ -243,6 +261,7 @@ export class SettingsMenu extends ShadowBaseElement {
       ),
     );
     this.setupSampleSelect();
+    this.greetingInput.value = this.getGreetingName();
     this.onChange();
   }
 
@@ -307,6 +326,7 @@ export class SettingsMenu extends ShadowBaseElement {
     this.bandTrackCollapsedHeightElem.value = `${bandCollapsed}`;
     this.dotTrackCollapsedHeightElem.value = `${dotCollapsed}`;
     this.dotTrackExpandedHeightElem.value = `${dotExpanded}`;
+    this.greetingInput.value = this.getGreetingName();
   }
 
   getAnnotSources(settings: {

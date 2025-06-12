@@ -35,6 +35,7 @@ export class GensSession {
   private gensBaseURL: string;
   private settings: SettingsMenu;
   private genomeBuild: number;
+  private greetingName: string = "World";
 
   constructor(
     // FIXME: This does not belong here I think
@@ -65,6 +66,7 @@ export class GensSession {
     this.gensBaseURL = gensBaseURL;
     this.settings = settings;
     this.genomeBuild = genomeBuild;
+    this.greetingName = "World";
   }
 
   public getGenomeBuild(): number {
@@ -241,5 +243,13 @@ export class GensSession {
   public removeHighlight(id: string) {
     delete this.highlights[id];
     this.render({});
+  }
+
+  public getGreetingName(): string {
+    return this.greetingName;
+  }
+
+  public setGreetingName(name: string) {
+    this.greetingName = name;
   }
 }

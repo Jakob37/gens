@@ -75,6 +75,9 @@ template.innerHTML = String.raw`
       <button title="Open settings menu" id="settings-button" class='button'>
         <span class="fas ${ICONS.settings}"></span>
       </button>
+      <button title="Say hello" id="hello-button" class='button'>
+        Hello
+      </button>
     </div>
   </div>
 `;
@@ -90,6 +93,7 @@ export class InputControls extends HTMLElement {
   private toggleMarkerButton: HTMLButtonElement;
   private chromosomeViewButton: HTMLButtonElement;
   private settingsButton: HTMLButtonElement;
+  private helloButton: HTMLButtonElement;
 
   private searchButton: HTMLButtonElement;
 
@@ -163,6 +167,7 @@ export class InputControls extends HTMLElement {
 
     this.chromosomeViewButton = this.querySelector("#chromosome-view-button");
     this.settingsButton = this.querySelector("#settings-button");
+    this.helloButton = this.querySelector("#hello-button");
 
     this.searchButton = this.querySelector("#search");
 
@@ -172,6 +177,11 @@ export class InputControls extends HTMLElement {
 
     this.settingsButton.addEventListener("click", () => {
       this.onOpenSettings();
+    });
+
+    this.helloButton.addEventListener("click", () => {
+      const name = this.session.getGreetingName();
+      alert(`Hello ${name}`);
     });
 
     // FIXME: Also enter when inside the input?
