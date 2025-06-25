@@ -39,6 +39,8 @@ flask_cli_stub = types.ModuleType("flask.cli")
 class _FlaskGroup:  # pragma: no cover
     def __init__(self, *a, **kw):
         pass
+    def add_command(self, *a, **kw):
+        pass
 flask_cli_stub.FlaskGroup = _FlaskGroup
 sys.modules.setdefault("flask.cli", flask_cli_stub)
 
@@ -215,8 +217,28 @@ sys.modules.setdefault("bson", bson_stub)
 # pydantic_core stub for BaseModel support
 pydantic_core_stub = types.ModuleType("pydantic_core")
 core_schema_stub = types.SimpleNamespace(CoreSchema=object)
+def _union_schema(*args, **kwargs):
+    return object
+def _to_string_ser_schema(*args, **kwargs):
+    return object
+core_schema_stub.union_schema = _union_schema
+core_schema_stub.to_string_ser_schema = _to_string_ser_schema
 pydantic_core_stub.core_schema = core_schema_stub
+class _PydanticCustomError(Exception):
+    pass
+pydantic_core_stub.PydanticCustomError = _PydanticCustomError
 sys.modules.setdefault("pydantic_core", pydantic_core_stub)
+
+# Minimal requests stub for modules that expect it
+requests_stub = types.ModuleType("requests")
+def _dummy_get(*a, **kw):  # pragma: no cover
+    class Resp:
+        status_code = 200
+        def json(self):
+            return {}
+    return Resp()
+requests_stub.get = _dummy_get
+sys.modules.setdefault("requests", requests_stub)
 
 # Stub for email_validator required by pydantic EmailStr
 sys.modules.setdefault("email_validator", types.ModuleType("email_validator"))
