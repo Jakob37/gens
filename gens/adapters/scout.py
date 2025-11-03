@@ -34,13 +34,12 @@ class ScoutMongoAdapter(InterpretationAdapter):
         query: dict[str, Any] = {
             "case_id": case_id,
             "category": variant_category,
+            "$or": [
+                {"samples.sample_id": sample_name},
+                {"samples.display_name": sample_name},
+            ],
             "chromosome": region.chromosome,
-            "samples": {
-                "$elemMatch": {
-                    "genotype_call": {"$in": valid_genotype_calls},
-                    "$or": [{"sample_id": sample_name}, {"display_name": sample_name}],
-                }
-            },
+            "samples.genotype_call": {"$in": valid_genotype_calls},
         }
         if all(param is not None for param in [region.start, region.end]):
             # FIXME: What is this?

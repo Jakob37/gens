@@ -108,32 +108,28 @@ export class GensSession {
   public loadProfile(profile: ProfileSettings): void {
     console.log("Loading profile", profile);
 
-    if (!profile) {
-      console.warn("No profile found, using defaults");
-      return;
-    }
-
     if (profile.version != TRACK_LAYOUT_VERSION) {
       console.warn(
         `Version mismatch. Found ${profile.version}, Gens is currently on ${TRACK_LAYOUT_VERSION}. Dropping the saved layout`,
       );
       profile = undefined;
-      return;
     }
 
-    this.variantThreshold = profile.variantThreshold;
-    this.trackLayout = profile.layout;
-    this.trackHeights = profile.trackHeights;
-    this.colorAnnotationId = profile.colorAnnotationId;
+    if (profile) {
+      this.variantThreshold = profile.variantThreshold;
+      this.trackLayout = profile.layout;
+      this.trackHeights = profile.trackHeights;
+      this.colorAnnotationId = profile.colorAnnotationId;
 
-    // A pre-selected track might disappear if the db is updated
-    this.annotationSelections = [];
-    for (const loadedSelectionId of profile.annotationSelections) {
-      if (!this.idToAnnotSource[loadedSelectionId]) {
-        console.warn(`Selection ID ${loadedSelectionId} not found, skipping`);
-        continue;
+      // A pre-selected track might disappear if the db is updated
+      this.annotationSelections = [];
+      for (const loadedSelectionId of profile.annotationSelections) {
+        if (!this.idToAnnotSource[loadedSelectionId]) {
+          console.warn(`Selection ID ${loadedSelectionId} not found, skipping`);
+          continue;
+        }
+        this.annotationSelections.push(loadedSelectionId);
       }
-      this.annotationSelections.push(loadedSelectionId);
     }
   }
 
@@ -422,6 +418,7 @@ function getArrangedTracks(
   layout: TrackLayout,
   origTrackSettings: DataTrackSettings[],
 ): DataTrackSettings[] {
+
   // First create a map layout ID -> track settings
   const layoutIdToSettings: Record<string, DataTrackSettings[]> = {};
   for (const trackSetting of origTrackSettings) {
