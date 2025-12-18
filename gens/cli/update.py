@@ -67,6 +67,12 @@ def update() -> None:
     help="Update coverage file",
 )
 @click.option(
+    "--counts",
+    type=click.Path(exists=True, path_type=Path),
+    required=False,
+    help="Update multi-column counts file",
+)
+@click.option(
     "--meta",
     "meta_file",
     type=click.Path(exists=True, path_type=Path),
@@ -85,6 +91,7 @@ def sample(
     sex: SampleSex | None,
     baf: Path | None,
     coverage: Path | None,
+    counts: Path | None,
     meta_file: Path | None,
     force: bool,
 ) -> None:
@@ -109,6 +116,8 @@ def sample(
         sample_obj.coverage_file = coverage
     if baf is not None:
         sample_obj.baf_file = baf
+    if counts is not None:
+        sample_obj.counts_file = counts
 
     if meta_file:
         meta_results = parse_meta_file(meta_file)

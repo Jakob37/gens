@@ -92,6 +92,12 @@ def load() -> None:
     help="File or directory of annotation files to load into the database",
 )
 @click.option(
+    "--counts",
+    required=False,
+    type=click.Path(exists=True),
+    help="File containing multi-column count data (tabixed .bed.gz)"
+)
+@click.option(
     "-n",
     "--case-id",
     required=True,
@@ -128,6 +134,7 @@ def sample(
     genome_build: GenomeBuild,
     baf: Path,
     coverage: Path,
+    counts: Path | None,
     case_id: str,
     overview_json: Path,
     meta_files: tuple[Path, ...],
@@ -152,6 +159,7 @@ def sample(
             "genome_build": genome_build,
             "baf_file": baf,
             "coverage_file": coverage,
+            "counts_file": counts,
             "overview_file": overview_json,
             "sample_type": normalize_sample_type(sample_type) if sample_type else None,
             "sex": sex,

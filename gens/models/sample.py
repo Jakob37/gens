@@ -86,24 +86,41 @@ class SampleInfo(RWModel, CreatedAtModel):
     genome_build: GenomeBuild
     baf_file: FilePath
     coverage_file: FilePath
+    counts_file: FilePath | None = None
     overview_file: FilePath | None = None
     sample_type: str | None = None
     sex: SampleSex | None = None
     meta: list[MetaEntry] = Field(default_factory=list)
 
     @classmethod
-    def _validate_sample_file(cls, path: Path) -> Path:
+    def _validate_sample_file(cls, path: Path, require_header: bool = False) -> tuple[list[str] | None, list[str]]:
         if not path.is_file():
             raise ValueError(f"Sample file not found: {path}")
 
         try:
             with gzip.open(path, "rt", encoding="utf-8") as handle:
                 first_line = handle.readline().strip()
+                # FIXME: Should this be simplified?
+                if require_header:
+                    if not first_line.startswith("#"):
+                        raise ValueError(
+                            "Sample file must start with a header line beginning with '#'"
+                        )
+                    header_cols = first_line.lstrip("#").split("\t")
+                    first_line = handle.readline().strip()
+                else:
+                    header_cols = (
+                        first_line.lstrip("#").split("\t")
+                        if first_line.startswith("#")
+                        else None
+                    )
+                    if first_line.startswith("#"):
+                        first_line = handle.readline().strip()
         except OSError as err:
             raise ValueError(f"Could not read sample file {path}: {err}") from err
 
         if not first_line:
-            raise ValueError(f"Sample file is empty")
+            raise ValueError("Sample file is empty")
 
         columns = first_line.split("\t")
         if len(columns) < 4:
@@ -127,10 +144,46 @@ class SampleInfo(RWModel, CreatedAtModel):
 
         return path
 
+    @classmethod
+    def _validate_counts_file(cls, path: Path) -> Path:
+        header_cols, columns = cls._validate_sample_file(path, require_header=True)
+
+        if header_cols is None:
+            raise ValueError("Counts file is missing a header line")
+
+        if len(header_cols) < 4:
+            raise ValueError(
+                "Counts file header must include at least one data column after chr, start and end"
+            )
+
+        value_col_count = len(header_cols) - 3
+        if len(columns) - 3 != value_col_count:
+            raise ValueError(
+                "Counts file header does not match number of value columns in data rows"
+            )
+
+        try:
+            for val in columns[3:]:
+                float(val)
+        except ValueError as err:
+            raise ValueError("Counts file value columns must be numeric") from err
+
+        return path
+
+
     @field_validator("baf_file", "coverage_file")
     @classmethod
     def validate_sample_files(cls, path: Path) -> Path:
-        return cls._validate_sample_file(path)
+        cls._validate_sample_file(path)
+        return path
+
+    @field_validator("counts_file")
+    @classmethod
+    def validate_counts_file(cls, path: Path | None) -> Path | None:
+        if path is None:
+            return None
+        return cls._validate_counts_file(path)
+
 
     @computed_field()  # type: ignore
     @property
@@ -145,6 +198,16 @@ class SampleInfo(RWModel, CreatedAtModel):
         """Get path to a tabix index."""
 
         return _get_tabix_path(self.coverage_file, check=True)
+
+
+    @computed_field()  # type: ignore
+    @property
+    def counts_index(self) -> FilePath | None:
+        return (
+            _get_tabix_path(self.counts_file, check=True)
+            if self.counts_file is not None
+            else None
+        )
 
     @field_serializer("baf_file", "coverage_file", "overview_file")
     def serialize_path(self, path: Path) -> str:
@@ -162,6 +225,13 @@ class GenomeCoverage(RWModel):
     region: str | None
     position: list[int]
     value: list[float]
+    zoom: ZoomLevel | None = None
+
+class BinnedCounts(RWModel):
+    region: str | None
+    start: list[int]
+    end: list[int]
+    values: dict[str, list[float]]
     zoom: ZoomLevel | None = None
 
 

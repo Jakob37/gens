@@ -668,6 +668,8 @@ interface ApiSample {
   case_id: string;
   coverage_file: string;
   coverage_index: string;
+  counts_file?: string | null;
+  counts_index?: string | null;
   created_at: string;
   genome_build: number;
   overview_file: string;

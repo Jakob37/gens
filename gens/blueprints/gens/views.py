@@ -35,6 +35,8 @@ def _validate_sample_files(samples: Iterable[SampleInfo]) -> None:
         for file_path in (sample.baf_file, sample.coverage_file):
             if file_path is None or not Path(file_path).is_file():
                 raise FileNotFoundError(file_path)
+        if sample.counts_file is not None and not Path(sample.counts_file).is_file():
+            raise FileNotFoundError(sample.counts_file)
 
 
 def _render_sample_error(message: str):

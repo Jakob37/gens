@@ -18,7 +18,7 @@ from gens.models.sample import MetaEntry, MultipleSamples, SampleInfo
 LOG = logging.getLogger(__name__)
 
 
-INDEX_FIELDS: set[str] = {"baf_index", "coverage_index"}
+INDEX_FIELDS: set[str] = {"baf_index", "coverage_index", "counts_index"}
 
 
 def update_sample(db: Database[Any], sample_obj: SampleInfo) -> None:
@@ -152,12 +152,24 @@ def get_samples_for_case(
 
         baf_file = Path(result["baf_file"])
         coverage_file = Path(result["coverage_file"])
+        counts_file_raw = result.get("counts_file")
+        counts_file = Path(counts_file_raw) if counts_file_raw is not None else None
         for file_path in (baf_file, coverage_file):
             if not file_path.is_file():
                 raise FileNotFoundError(f"{file_path} was not found")
             index_path = file_path.with_suffix(file_path.suffix + ".tbi")
             if not index_path.is_file():
                 raise FileNotFoundError(f"{index_path} was not found")
+            
+
+        if counts_file is not None:
+            if not counts_file.is_file():
+                raise FileNotFoundError(f"{counts_file} was not found")
+            
+            counts_index = counts_file.with_suffix(counts_file.suffix + ".tbi")
+            if not counts_index.is_file():
+                raise FileNotFoundError(f"{counts_index} not found")
+
         if overview_file is not None and not Path(overview_file).is_file():
             raise FileNotFoundError(f"{overview_file} was not found")
 
@@ -167,6 +179,7 @@ def get_samples_for_case(
             genome_build=GenomeBuild(int(result["genome_build"])),
             baf_file=baf_file,
             coverage_file=coverage_file,
+            counts_file=counts_file,
             overview_file=Path(overview_file) if overview_file is not None else None,
             sample_type=result.get("sample_type"),
             sex=result.get("sex"),
@@ -211,6 +224,7 @@ def get_sample(
         genome_build=GenomeBuild(int(result["genome_build"])),
         baf_file=result["baf_file"],
         coverage_file=result["coverage_file"],
+        counts_file=result.get("counts_file"),
         overview_file=overview_file,
         sample_type=result.get("sample_type"),
         sex=result.get("sex"),
