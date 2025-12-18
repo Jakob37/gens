@@ -147,6 +147,7 @@ export async function initCanvases({
       sampleType: sample.sample_type,
       sex: parsedSex,
       meta: sample.meta,
+      countsColumns: sample.counts_columns,
     };
     return result;
   });
@@ -189,6 +190,7 @@ export async function initCanvases({
   addSettingsPageSources(
     settingsPage,
     session,
+    api,
     render,
     allAnnotSources,
     allSamples,
@@ -284,6 +286,7 @@ function initializeInputControls(
 function addSettingsPageSources(
   settingsPage: SettingsMenu,
   session: GensSession,
+  api: API,
   render: (settings: RenderSettings) => void,
   allAnnotSources: ApiAnnotationTrack[],
   allSamples: Sample[],
@@ -309,7 +312,25 @@ function addSettingsPageSources(
     render({ reloadData: true, positionOnly, chromosomeChange: !positionOnly });
   };
   const onAddSample = async (sample: Sample) => {
-    session.addSample(sample);
+let sampleWithDetails = sample;
+    if (
+      sample.meta == null ||
+      sample.sex == null ||
+      sample.countsColumns == null
+    ) {
+      const apiSample = await api.getSample(sample.caseId, sample.sampleId);
+      const parsedSex = parseSex(apiSample.sex);
+      sampleWithDetails = {
+        caseId: apiSample.case_id,
+        sampleId: apiSample.sample_id,
+        sampleType: apiSample.sample_type ?? sample.sampleType,
+        sex: parsedSex ?? sample.sex,
+        meta: apiSample.meta ?? sample.meta,
+        countsColumns: apiSample.counts_columns ?? undefined,
+      };
+    }
+
+    session.addSample(sampleWithDetails);
     render({ reloadData: true, samplesUpdated: true });
   };
   const onRemoveSample = (sample: Sample) => {
