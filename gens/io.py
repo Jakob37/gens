@@ -13,7 +13,7 @@ from pysam import TabixFile
 
 from gens.crud.samples import get_sample
 from gens.models.genomic import Chromosome, GenomicRegion
-from gens.models.sample import GenomeCoverage, SampleInfo, ScatterDataType, ZoomLevel
+from gens.models.sample import BinnedCounts, GenomeCoverage, SampleInfo, ScatterDataType, ZoomLevel
 
 BAF_SUFFIX = ".baf.bed.gz"
 COV_SUFFIX = ".cov.bed.gz"
@@ -154,3 +154,75 @@ def get_overview_from_tabix(
         results.append(parse_raw_tabix([r.split("\t") for r in records]))
 
     return results
+
+
+def _get_counts_columns(file: Path) -> list[str]:
+    with gzip.open(file, "rt", encoding="utf-8") as handle:
+        header_line = handle.readline().strip()
+
+    if not header_line.startswith("#"):
+        raise ValueError("Counts file is missing header line")
+
+    columns = header_line.lstrip("#").split("\t")
+    if len(columns) < 4:
+        raise ValueError("Counts header must include at least one value column")
+    return columns[3:]
+
+
+def parse_counts_tabix(
+    tabix_result: list[list[str]], value_columns: list[str]
+) -> BinnedCounts:
+    zoom: str | None = None
+    region: str | None = None
+    starts: list[int] = []
+    ends: list[int] = []
+    values: dict[str, list[float]] = {col: [] for col in value_columns}
+
+    for entry in tabix_result:
+        start = int(entry[1])
+        end = int(entry[2])
+        if zoom is None and region is None:
+            zoom, region = entry[0].split("_")
+        row_values = entry[3:]
+        if len(row_values) != len(value_columns):
+            raise ValueError(
+                "Counts data row does not match number of value columns declared in header"
+            )
+        starts.append(start)
+        ends.append(end)
+        for col_name, value in zip(value_columns, row_values):
+            values[col_name].append(float(value))
+
+    return BinnedCounts(
+        region=region,
+        zoom=None if zoom is None else ZoomLevel(zoom),
+        start=starts,
+        end=ends,
+        values=values,
+    )
+
+
+def get_counts_data(
+    collection: Collection[dict[str, Any]],
+    sample_id: str,
+    case_id: str,
+    region: GenomicRegion,
+    zoom_level: Literal["o", "a", "b", "c", "d"],
+) -> BinnedCounts:
+    """Get multi-column counts data for a region."""
+
+    sample_obj = get_sample(collection, sample_id, case_id)
+    if sample_obj.counts_file is None:
+        raise ValueError(f"Sample {sample_id} in case {case_id} has no counts file")
+
+    tabix_file = TabixFile(str(sample_obj.counts_file))
+    value_columns = _get_counts_columns(Path(sample_obj.counts_file))
+    valid_zoom_levels = {"o", "a", "b", "c", "d"}
+    if zoom_level not in valid_zoom_levels:
+        raise ValueError(
+            f"Unexpected zoom level: {zoom_level}, valid are: {valid_zoom_levels}"
+        )
+    tabix_result = tabix_query(
+        tabix_file, zoom_level=ZoomLevel(zoom_level), region=region
+    )
+    return parse_counts_tabix(tabix_result, value_columns)
