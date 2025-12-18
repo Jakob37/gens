@@ -281,7 +281,7 @@ export const bandTrackTypes: TrackType[] = [
   "sample-annotation",
   "variant",
 ];
-export const dotTrackTypes: TrackType[] = ["dot-baf", "dot-cov"];
+export const dotTrackTypes: TrackType[] = ["dot-baf", "dot-cov", "dot-counts"];
 
 export const BAF_Y_RANGE: [number, number] = [0, 1];
 export const DEFAULT_COV_Y_RANGE: [number, number] = [-3, 3];

@@ -20,6 +20,7 @@ export class API {
     Chromosome,
     ChromosomeInfo
   >;
+  private countsColumnsBySample: Record<string, string[] | null> = {};
 
   getChromSizes(): Record<Chromosome, number> {
     if (this.allChromData == null) {
@@ -370,6 +371,94 @@ export class API {
     }
   }
 
+  private countsSampleZoomCache: Record<
+    string,
+    Record<string, Record<string, Promise<ApiCountsData>>>
+  > = {};
+  private countsSampleDWindowCache: Record<
+    string,
+    Record<string, { range: Rng; promise: Promise<ApiCountsData> }>
+  > = {};
+  getCounts(
+    caseId: string,
+    sampleId: string,
+    column: string,
+    chrom: string,
+    zoom: string,
+    xRange: Rng,
+  ): Promise<ApiCoverageDot[]> {
+    const sampleKey = getSampleKey({ caseId, sampleId });
+
+    if (this.countsSampleZoomCache[sampleKey] == null) {
+      this.countsSampleZoomCache[sampleKey] = {};
+    }
+
+    if (CACHED_ZOOM_LEVELS.includes(zoom)) {
+      const chromIsCached =
+        this.countsSampleZoomCache[sampleKey][chrom] !== undefined;
+
+      if (!chromIsCached) {
+        this.countsSampleZoomCache[sampleKey][chrom] = {};
+      }
+
+      const zoomIsCached =
+        this.countsSampleZoomCache[sampleKey][chrom][zoom] !== undefined;
+
+      if (!zoomIsCached) {
+        this.countsSampleZoomCache[sampleKey][chrom][zoom] = fetchCountsData(
+          this.apiURI,
+          sampleId,
+          caseId,
+          chrom,
+          zoom,
+          [1, this.getChromSizes()[chrom]],
+        );
+      }
+      return this.countsSampleZoomCache[sampleKey][chrom][zoom].then((data) =>
+        countsToDots(data, column),
+      );
+    } else {
+      if (this.countsSampleDWindowCache[sampleKey] == null) {
+        this.countsSampleDWindowCache[sampleKey] = {};
+      }
+
+      const cached = this.countsSampleDWindowCache[sampleKey][chrom];
+      const withinCache =
+        cached !== undefined &&
+        xRange[0] >= cached.range[0] &&
+        xRange[1] <= cached.range[1];
+
+      if (withinCache) {
+        return cached.promise.then((data) =>
+          filterRange(countsToDots(data, column), xRange),
+        );
+      }
+
+      const extended = expandRange(
+        xRange,
+        ZOOM_WINDOW_CACHE_MULTIPLIER,
+        this.getChromSizes()[chrom],
+      );
+
+      const promise = fetchCountsData(
+        this.apiURI,
+        sampleId,
+        caseId,
+        chrom,
+        zoom,
+        extended,
+      );
+
+      this.countsSampleDWindowCache[sampleKey][chrom] = {
+        range: extended,
+        promise,
+      };
+      return promise.then((data) =>
+        filterRange(countsToDots(data, column), xRange),
+      );
+    }
+  }
+
   private transcriptUpdateTimestamp: string | null = null;
   private async getTranscriptUpdateTimestamp(): Promise<string | null> {
     if (this.transcriptUpdateTimestamp != null) {
@@ -540,10 +629,25 @@ export class API {
       case_id: caseId,
       genome_build: this.genomeBuild,
     };
-    return get(
-      new URL("samples/sample", this.apiURI).href,
-      query,
-    ) as Promise<ApiSample>;
+    return get(new URL("samples/sample", this.apiURI).href, query).then(
+      (sample: ApiSample) => {
+        const sampleKey = getSampleKey({ caseId, sampleId });
+        this.countsColumnsBySample[sampleKey] = sample?.counts_columns ?? null;
+        return sample;
+      },
+    );
+  }
+
+  async getCountsColumns(
+    caseId: string,
+    sampleId: string,
+  ): Promise<string[] | null> {
+    const sampleKey = getSampleKey({ caseId, sampleId });
+    if (this.countsColumnsBySample[sampleKey] === undefined) {
+      const sample = await this.getSample(caseId, sampleId);
+      return sample.counts_columns ?? null;
+    }
+    return this.countsColumnsBySample[sampleKey];
   }
 }
 
@@ -642,3 +746,49 @@ async function getOverviewData(
 
   return dataPerChrom;
 }
+
+async function fetchCountsData(
+  apiURI: string,
+  sampleId: string,
+  caseId: string,
+  chrom: string,
+  zoom: string,
+  range: Rng,
+): Promise<ApiCountsData> {
+  const query = {
+    sample_id: sampleId,
+    case_id: caseId,
+    chromosome: chrom,
+    zoom_level: zoom,
+    start: range[0],
+    end: range[1],
+  };
+
+  const regionResult = (await get(
+    new URL("samples/sample/counts", apiURI).href,
+    query,
+  )) as ApiCountsData;
+
+  return regionResult;
+}
+
+function countsToDots(
+  countsData: ApiCountsData,
+  column: string,
+): ApiCoverageDot[] {
+  const values = countsData.values[column];
+  if (values == null) {
+    throw new Error(`Counts data is missing column ${column}`);
+  }
+
+  const midpoints = zip(countsData.start, countsData.end).map(
+    ([start, end]) => (start + end) / 2,
+  );
+
+  if (midpoints.length !== values.length) {
+    throw new Error("Counts data length mismatch between positions and values");
+  }
+
+  return zip(midpoints, values).map(([pos, value]) => {
+    return { pos, value };
+  });

@@ -9,6 +9,8 @@ from pydantic import Field, computed_field, field_serializer, field_validator
 from pydantic.types import FilePath
 from pydantic_extra_types.color import Color
 
+from gens.utils import get_counts_columns
+
 from .base import CreatedAtModel, RWModel
 from .genomic import GenomeBuild
 
@@ -19,7 +21,7 @@ def _get_tabix_path(path: Path, check: bool = False) -> Path:
     The index is assumed to be in the same location as the file."""
     idx_path = path.with_suffix(path.suffix + ".tbi")
     if check and not idx_path.is_file():
-        raise FileNotFoundError("Index file: {idx_path} was not found.")
+        raise FileNotFoundError(f"Index file: {idx_path} was not found.")
     return idx_path
 
 
@@ -99,6 +101,7 @@ class SampleInfo(RWModel, CreatedAtModel):
 
         try:
             with gzip.open(path, "rt", encoding="utf-8") as handle:
+                header_cols: list[str] | None = None
                 first_line = handle.readline().strip()
                 # FIXME: Should this be simplified?
                 if require_header:
@@ -142,7 +145,7 @@ class SampleInfo(RWModel, CreatedAtModel):
                 f"Start, end and value columns must be numeric. Found row: {first_line}"
             )
 
-        return path
+        return header_cols, columns
 
     @classmethod
     def _validate_counts_file(cls, path: Path) -> Path:
@@ -208,6 +211,11 @@ class SampleInfo(RWModel, CreatedAtModel):
             if self.counts_file is not None
             else None
         )
+
+    @computed_field()  # type: ignore
+    @property
+    def counts_columns(self) -> list[str] | None:
+        return get_counts_columns(self.counts_file) if self.counts_file else None
 
     @field_serializer("baf_file", "coverage_file", "overview_file")
     def serialize_path(self, path: Path) -> str:

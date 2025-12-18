@@ -14,6 +14,7 @@ from pysam import TabixFile
 from gens.crud.samples import get_sample
 from gens.models.genomic import Chromosome, GenomicRegion
 from gens.models.sample import BinnedCounts, GenomeCoverage, SampleInfo, ScatterDataType, ZoomLevel
+from gens.utils import get_counts_columns
 
 BAF_SUFFIX = ".baf.bed.gz"
 COV_SUFFIX = ".cov.bed.gz"
@@ -156,19 +157,6 @@ def get_overview_from_tabix(
     return results
 
 
-def _get_counts_columns(file: Path) -> list[str]:
-    with gzip.open(file, "rt", encoding="utf-8") as handle:
-        header_line = handle.readline().strip()
-
-    if not header_line.startswith("#"):
-        raise ValueError("Counts file is missing header line")
-
-    columns = header_line.lstrip("#").split("\t")
-    if len(columns) < 4:
-        raise ValueError("Counts header must include at least one value column")
-    return columns[3:]
-
-
 def parse_counts_tabix(
     tabix_result: list[list[str]], value_columns: list[str]
 ) -> BinnedCounts:
@@ -216,7 +204,7 @@ def get_counts_data(
         raise ValueError(f"Sample {sample_id} in case {case_id} has no counts file")
 
     tabix_file = TabixFile(str(sample_obj.counts_file))
-    value_columns = _get_counts_columns(Path(sample_obj.counts_file))
+    value_columns = get_counts_columns(Path(sample_obj.counts_file))
     valid_zoom_levels = {"o", "a", "b", "c", "d"}
     if zoom_level not in valid_zoom_levels:
         raise ValueError(

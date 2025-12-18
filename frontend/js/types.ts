@@ -220,6 +220,14 @@ interface ApiCoverageBin {
   zoom: string;
 }
 
+interface ApiCountsData {
+  region: string | null;
+  start: number[];
+  end: number[];
+  values: Record<string, number[]>;
+  zoom: string | null;
+}
+
 interface PopupContent {
   header: string;
   info?: { key: string; value: string; url?: string }[];
@@ -384,6 +392,12 @@ interface RenderDataSource {
   ) => Promise<RenderDot[]>;
   getBafData: (
     sample: Sample,
+    chrom: string,
+    xRange: Rng,
+  ) => Promise<RenderDot[]>;
+  getCountsData: (
+    sample: Sample,
+    column: string,
     chrom: string,
     xRange: Rng,
   ) => Promise<RenderDot[]>;
@@ -670,6 +684,7 @@ interface ApiSample {
   coverage_index: string;
   counts_file?: string | null;
   counts_index?: string | null;
+  counts_columns?: string[] | null;
   created_at: string;
   genome_build: number;
   overview_file: string;
@@ -685,6 +700,7 @@ interface Sample {
   sampleType?: string;
   sex?: Sex;
   meta?: SampleMetaEntry[];
+  countsColumns?: string[];
 }
 
 type TrackType =
@@ -693,6 +709,7 @@ type TrackType =
   | "variant"
   | "dot-cov"
   | "dot-baf"
+  | "dot-count"
   | "gene"
   | "position"
   | "gene-list";

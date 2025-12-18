@@ -18,7 +18,7 @@ from gens.models.sample import MetaEntry, MultipleSamples, SampleInfo
 LOG = logging.getLogger(__name__)
 
 
-INDEX_FIELDS: set[str] = {"baf_index", "coverage_index", "counts_index"}
+INDEX_FIELDS: set[str] = {"baf_index", "coverage_index", "counts_index", "counts_columns"}
 
 
 def update_sample(db: Database[Any], sample_obj: SampleInfo) -> None:

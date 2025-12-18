@@ -386,6 +386,10 @@ export function getSampleFromID(id: string): Sample {
   return sample;
 }
 
+export function sanitizeForId(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
 export function downloadAsJSON(object: unknown, filename: string) {
   const serialized = JSON.stringify(object, null, 2);
   const blob = new Blob([serialized], { type: "application/json" });
