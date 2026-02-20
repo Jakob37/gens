@@ -1,18 +1,61 @@
-export const TRACK_LAYOUT_PREFIX = "gens.trackLayout.";
+import { IDB_CACHE } from "../constants";
+import { idbDeleteDatabase } from "./indexeddb";
+
+export const USER_PROFILE_PREFIX = "gens.trackLayout.";
 
 export function saveProfileToBrowser(
   profileKey: string,
   layout: ProfileSettings,
 ): void {
-  saveToBrowserSession(layout, `${TRACK_LAYOUT_PREFIX}${profileKey}`);
+  saveToBrowserSession(layout, `${USER_PROFILE_PREFIX}${profileKey}`);
 }
 
 export function loadProfileSettings(
   profileKey: string,
+  expectedVersion?: number,
 ): ProfileSettings | null {
-  return loadFromBrowserSession(
-    `${TRACK_LAYOUT_PREFIX}${profileKey}`,
-  ) as ProfileSettings | null;
+  const storageKey = `${USER_PROFILE_PREFIX}${profileKey}`;
+  const stored = loadFromBrowserSession(storageKey) as ProfileSettings | null;
+  if (!stored) {
+    return null;
+  }
+
+  if (expectedVersion != null && stored.version !== expectedVersion) {
+    console.warn(
+      `Expected version ${expectedVersion} and found ${stored.version}. Removing previous entry.`,
+    );
+    localStorage.removeItem(storageKey);
+    return null;
+  }
+
+  return stored;
+}
+
+export async function clearCachedData(): Promise<void> {
+  clearProfileSettings();
+  await clearIndexedDbCache();
+}
+
+function clearProfileSettings(): void {
+  const keysToRemove: string[] = [];
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+
+    if (key && key.startsWith(USER_PROFILE_PREFIX)) {
+      keysToRemove.push(key);
+    }
+  }
+
+  keysToRemove.forEach((key) => localStorage.removeItem(key));
+}
+
+async function clearIndexedDbCache(): Promise<void> {
+  try {
+    await idbDeleteDatabase(IDB_CACHE.dbName);
+  } catch (error) {
+    console.warn(`Failed to delete IndexedDB cache ${IDB_CACHE.dbName}`, error);
+  }
 }
 
 function saveToBrowserSession(value: StorageValue, key: string): void {

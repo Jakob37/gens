@@ -92,6 +92,12 @@ export class TrackView extends ShadowBaseElement {
   private session: GensSession;
   private sessionPos: SessionPosition;
   private dataSource: RenderDataSource;
+  // Prevent older request overwriting newer ones
+  // If an older request is slow and coming in after a newer request
+  // it is dropped
+  // This resolved an issue with expand/collapse hide/unhide of newly added
+  // tracks apparently not being rendered in the tracks
+  private trackSettingsSyncRequestId = 0;
 
   private lastRenderedSamples: Sample[] = [];
 
@@ -178,7 +184,7 @@ export class TrackView extends ShadowBaseElement {
 
     const yAxisCov = {
       range: session.profile.getCoverageRange(),
-      label: `Log2 Ratio (${session.getMainSample().sampleId})`,
+      label: `Log2 Ratio`,
       hideLabelOnCollapse: false,
       hideTicksOnCollapse: false,
     };
@@ -195,7 +201,7 @@ export class TrackView extends ShadowBaseElement {
 
     const yAxisBaf = {
       range: BAF_Y_RANGE,
-      label: `B Allele Freq (${session.getMainSample().sampleId})`,
+      label: `BAF`,
       hideLabelOnCollapse: false,
       hideTicksOnCollapse: false,
       highlightedYs: [0.5],
@@ -285,16 +291,16 @@ export class TrackView extends ShadowBaseElement {
 
   private async initializeTracks() {
     const samples = this.session.getSamples();
-    const getSample = (caseId: string, sampleId: string) =>
-      this.session.getSample(caseId, sampleId);
-    const getSampleAnnotSources = (caseId, sampleId) =>
-      this.dataSource.getSampleAnnotSources(caseId, sampleId);
+    const getSample = (id: SampleIdentifier) => this.session.getSample(id);
+    const getSampleAnnotSources = (id: SampleIdentifier) =>
+      this.dataSource.getSampleAnnotSources(id);
     const getCoverageRange = () => this.session.profile.getCoverageRange();
 
     const sampleKeys = new Set(samples.map((s) => getSampleKey(s)));
     const dataTrackSettings = await getSampleTrackSettings(
       sampleKeys,
       getSample,
+      (sample: Sample) => this.session.getDisplaySampleLabel(sample),
       getCoverageRange,
       getSampleAnnotSources,
     );
@@ -327,7 +333,11 @@ export class TrackView extends ShadowBaseElement {
       renderSettings.colorByChange
     ) {
       this.updateColorBands().then(() => {
-        this.requestRender({});
+        // Make sure that the render is triggered after updated annotation bands
+        this.requestRender({
+          reloadData: Boolean(renderSettings.reloadData),
+          positionOnly: renderSettings.positionOnly,
+        });
       });
     }
 
@@ -340,6 +350,7 @@ export class TrackView extends ShadowBaseElement {
     );
 
     const existingTracks = this.session.tracks.getTracks();
+    const syncRequestId = ++this.trackSettingsSyncRequestId;
 
     syncDataTrackSettings(
       existingTracks,
@@ -347,6 +358,12 @@ export class TrackView extends ShadowBaseElement {
       this.dataSource,
       this.lastRenderedSamples,
     ).then(({ settings: dataTrackSettings, samples }) => {
+      // Ignore stale async sync results so old defaults cannot overwrite
+      // newer user actions (e.g. expand/collapse toggles).
+      if (syncRequestId !== this.trackSettingsSyncRequestId) {
+        return;
+      }
+
       this.session.tracks.setTracks(dataTrackSettings);
       this.lastRenderedSamples = samples;
 
@@ -362,7 +379,7 @@ export class TrackView extends ShadowBaseElement {
     this.overviewTracks.forEach((track) => track.render(renderSettings));
 
     const [startChrSeg, endChrSeg] = this.sessionPos.getChrSegments();
-    this.positionLabel.innerHTML = `${startChrSeg} - ${endChrSeg}`;
+    this.positionLabel.innerHTML = `${this.sessionPos.getChromosome()}${startChrSeg}${endChrSeg}`;
   }
 
   syncTrackOrder() {
@@ -469,6 +486,10 @@ export class TrackView extends ShadowBaseElement {
 
     const trackHeights = this.session.profile.getTrackHeights();
     for (const track of this.dataTracks) {
+      const settingsTrack = this.session.tracks.get(track.track.id);
+      if (settingsTrack != null) {
+        track.track.label = settingsTrack.trackLabel;
+      }
       // Assigning track heights
       // FIXME: Consider approaches here. Might be that the track heights
       // should be part of the render object.
@@ -493,14 +514,13 @@ async function getAnnotColorBands(
   session: GensSession,
   dataSource: RenderDataSource,
 ) {
-  const colorAnnot = session.profile.getColorAnnotation();
-
-  let colorBands: RenderBand[] = [];
-  if (colorAnnot != null) {
-    colorBands = await dataSource.getAnnotationBands(
-      session.profile.getColorAnnotation(),
+  const colorBands: RenderBand[] = [];
+  for (const annotId of session.profile.getColorAnnotations()) {
+    const annotBands = await dataSource.getAnnotationBands(
+      annotId,
       session.pos.getChromosome(),
     );
+    colorBands.push(...annotBands);
   }
   return colorBands;
 }

@@ -1,9 +1,12 @@
 import { SideMenu } from "../components/side_menu/side_menu";
-import { annotationDiff } from "../components/tracks_manager/utils/sync_tracks";
+import {
+  annotationDiff,
+  getGeneTrackSettings,
+} from "../components/tracks_manager/utils/sync_tracks";
 import { getPortableId } from "../components/tracks_manager/utils/track_layout";
-import { COLORS, PROFILE_SETTINGS_VERSION } from "../constants";
+import { COLORS, TRACK_IDS } from "../constants";
 import { getMetaWarnings } from "../util/meta_warnings";
-import { generateID } from "../util/utils";
+import { formatCaseLabel, generateID, normalizeAlias } from "../util/utils";
 import { SessionProfiles } from "./session_helpers/session_layouts";
 import { SessionPosition } from "./session_helpers/session_position";
 import { getArrangedTracks, Tracks } from "./session_helpers/session_tracks";
@@ -29,6 +32,8 @@ export class GensSession {
   private mainSample: Sample;
   private samples: Sample[];
   private allSamples: Sample[];
+  private caseDisplayAliases: Record<string, string>;
+  private sampleDisplayAliases: Record<string, string>;
   private chromViewActive: boolean;
   private warningThresholds: WarningThreshold[];
 
@@ -59,7 +64,9 @@ export class GensSession {
     allAnnotationSources: ApiAnnotationTrack[],
     warningThresholds: WarningThreshold[],
   ) {
-
+    // FIXME: Could this one be removed? Seems strange to have the render as a dependency for the session
+    // Should be replaced by callbacks minimally, and ideally reworked such that none of the render calling
+    // is dealt with from session itself
     this.render = render;
     this.sideMenu = sideMenu;
     this.mainSample = mainSample;
@@ -67,6 +74,8 @@ export class GensSession {
 
     this.samples = samples;
     this.allSamples = allSamples;
+    this.caseDisplayAliases = {};
+    this.sampleDisplayAliases = {};
 
     this.idToAnnotSource = {};
     for (const annotSource of allAnnotationSources) {
@@ -79,6 +88,7 @@ export class GensSession {
     this.warningThresholds = warningThresholds;
 
     this.profile = new SessionProfiles(defaultProfiles, samples);
+    this.sanitizeProfileColorAnnotationIds();
     this.tracks = new Tracks([]);
     this.chromTracks = new Tracks([]);
 
@@ -96,6 +106,81 @@ export class GensSession {
 
   public getMainSample(): Sample {
     return this.mainSample;
+  }
+
+  public getDisplaySampleLabel(sample: Sample): string {
+    const sessionAlias = this.getSessionSampleDisplayAlias(
+      sample.caseId,
+      sample.sampleId,
+      sample.genomeBuild,
+    );
+    if (sessionAlias != null) {
+      return sessionAlias;
+    }
+
+    const sampleAlias = normalizeAlias(sample.sampleAlias);
+    if (sampleAlias != null) {
+      return sampleAlias;
+    }
+    return sample.sampleId;
+  }
+
+  public getDisplayCaseLabel(
+    caseId: string,
+    displayCaseId?: string | null,
+    caseAlias?: string | null,
+  ): string {
+    const sessionAlias = this.getSessionCaseDisplayAlias(caseId);
+    if (sessionAlias != null) {
+      return sessionAlias;
+    }
+
+    const normalizedCaseAlias = normalizeAlias(caseAlias);
+    if (normalizedCaseAlias != null) {
+      return normalizedCaseAlias;
+    }
+    return formatCaseLabel(caseId, displayCaseId);
+  }
+
+  public getSessionCaseDisplayAlias(caseId: string): string | null {
+    return this.caseDisplayAliases[caseId] ?? null;
+  }
+
+  public setSessionCaseDisplayAlias(caseId: string, alias: string | null): void {
+    const normalizedAlias = normalizeAlias(alias);
+    if (normalizedAlias == null) {
+      delete this.caseDisplayAliases[caseId];
+    } else {
+      this.caseDisplayAliases[caseId] = normalizedAlias;
+    }
+
+    this.applyCaseAliasToSamples(caseId, normalizedAlias);
+  }
+
+  public getSessionSampleDisplayAlias(
+    caseId: string,
+    sampleId: string,
+    genomeBuild: number,
+  ): string | null {
+    const aliasKey = this.getSampleAliasKey(caseId, sampleId, genomeBuild);
+    return this.sampleDisplayAliases[aliasKey] ?? null;
+  }
+
+  public setSessionSampleDisplayAlias(
+    caseId: string,
+    sampleId: string,
+    genomeBuild: number,
+    alias: string | null,
+  ): void {
+    const aliasKey = this.getSampleAliasKey(caseId, sampleId, genomeBuild);
+    const normalizedAlias = normalizeAlias(alias);
+    if (normalizedAlias == null) {
+      delete this.sampleDisplayAliases[aliasKey];
+    } else {
+      this.sampleDisplayAliases[aliasKey] = normalizedAlias;
+    }
+
+    this.applySampleAliasToSamples(caseId, sampleId, genomeBuild, normalizedAlias);
   }
 
   public getMeta(
@@ -126,17 +211,18 @@ export class GensSession {
         continue;
       }
 
-      const matchedThreshold = thresholds.find((thres) => thres.column == val.type)
+      const matchedThreshold = thresholds.find(
+        (thres) => thres.column == val.type,
+      );
 
       if (matchedThreshold) {
-        // FIXME: Use string for hover info?
         const warning = getMetaWarnings(
           matchedThreshold,
           val.row_name,
           val.value,
           sample.sex,
         );
-  
+
         if (warning) {
           const coord = {
             row: val.row_name,
@@ -144,7 +230,6 @@ export class GensSession {
           };
           warningCoords.push(coord);
         }
-
       }
     }
 
@@ -178,6 +263,22 @@ export class GensSession {
 
   public loadProfile(profile: ProfileSettings): void {
     this.profile.loadProfile(profile);
+    this.sanitizeProfileColorAnnotationIds();
+  }
+
+  /**
+   * The profile may contain annotations that aren't present in the current database
+   * This trims away those IDs
+   */
+  private sanitizeProfileColorAnnotationIds(): void {
+    const availableAnnotationIds = new Set(Object.keys(this.idToAnnotSource));
+
+    const colorAnnotationIds = this.profile
+      .getColorAnnotations()
+      .filter((id) => availableAnnotationIds.has(id));
+    if (colorAnnotationIds.length !== this.profile.getColorAnnotations().length) {
+      this.profile.setColorAnnotations(colorAnnotationIds);
+    }
   }
 
   public getAnnotationSources(settings: {
@@ -190,7 +291,7 @@ export class GensSession {
 
     if (selectedAnnots.length != presentAnnots.length) {
       console.warn(
-        `Not all annotations were present. Selected: ${selectedAnnots.length} present: ${presentAnnots.length}`,
+        `Not all annotations specified in the profile was present in the database. Selected: ${selectedAnnots.length} (${selectedAnnots}) present: ${presentAnnots.length} (${presentAnnots})`,
       );
     }
 
@@ -233,9 +334,12 @@ export class GensSession {
     return this.samples;
   }
 
-  public getSample(caseId: string, sampleId: string): Sample | null {
+  public getSample(sampleIdf: SampleIdentifier): Sample | null {
     const matchedSamples = this.allSamples.filter(
-      (sample) => sample.caseId == caseId && sample.sampleId == sampleId,
+      (sample) =>
+        sample.caseId == sampleIdf.caseId &&
+        sample.sampleId == sampleIdf.sampleId &&
+        sample.genomeBuild == sampleIdf.genomeBuild,
     );
     if (matchedSamples.length == 1) {
       return matchedSamples[0];
@@ -246,20 +350,21 @@ export class GensSession {
     }
   }
 
-  public addSample(sample: Sample) {
-    this.samples.push(sample);
+  public addSample(id: SampleIdentifier) {
+    this.samples.push(id);
     this.profile.updateProfileKey(this.samples);
   }
 
-  public removeSample(sample: Sample): void {
+  public removeSample(id: SampleIdentifier): void {
     const pos = this.samples.findIndex(
       (currSample) =>
-        currSample.caseId === sample.caseId &&
-        currSample.sampleId === sample.sampleId,
+        currSample.caseId === id.caseId &&
+        currSample.sampleId === id.sampleId &&
+        currSample.genomeBuild === id.genomeBuild,
     );
 
     if (pos === -1) {
-      console.warn("Sample not found:", sample);
+      console.warn("Sample not found:", id);
       return;
     }
 
@@ -364,6 +469,11 @@ export class GensSession {
       this.tracks.removeTrack(removedId);
     }
 
+    const hasGenesTrack = this.tracks.hasTrack(TRACK_IDS.genes);
+    if (!hasGenesTrack) {
+      this.tracks.addTrack(getGeneTrackSettings());
+    }
+
     const arrangedTracks = getArrangedTracks(layout, this.tracks.getTracks());
 
     this.tracks.setTracks(arrangedTracks);
@@ -373,9 +483,50 @@ export class GensSession {
     const layout = buildTrackLayoutFromTracks(this.tracks.getTracks());
     this.profile.setTrackLayout(layout);
   }
+
+  private getSampleAliasKey(
+    caseId: string,
+    sampleId: string,
+    genomeBuild: number,
+  ): string {
+    return `${caseId}__${sampleId}__${genomeBuild}`;
+  }
+
+  private applyCaseAliasToSamples(caseId: string, alias: string | null): void {
+    const applyAlias = (sample: Sample) => {
+      if (sample.caseId !== caseId) {
+        return;
+      }
+      sample.caseAlias = alias;
+    };
+    this.samples.forEach(applyAlias);
+    this.allSamples.forEach(applyAlias);
+    applyAlias(this.mainSample);
+  }
+
+  private applySampleAliasToSamples(
+    caseId: string,
+    sampleId: string,
+    genomeBuild: number,
+    alias: string | null,
+  ): void {
+    const applyAlias = (sample: Sample) => {
+      if (
+        sample.caseId !== caseId ||
+        sample.sampleId !== sampleId ||
+        sample.genomeBuild !== genomeBuild
+      ) {
+        return;
+      }
+      sample.sampleAlias = alias;
+    };
+    this.samples.forEach(applyAlias);
+    this.allSamples.forEach(applyAlias);
+    applyAlias(this.mainSample);
+  }
 }
 
-function buildTrackLayoutFromTracks(tracks: DataTrackSettings[]) {
+function buildTrackLayoutFromTracks(tracks: DataTrackSettings[]): TrackLayout {
   const order: Set<string> = new Set();
   const hidden: Record<string, boolean> = {};
   const expanded: Record<string, boolean> = {};
@@ -386,11 +537,9 @@ function buildTrackLayoutFromTracks(tracks: DataTrackSettings[]) {
     expanded[pid] = info.isExpanded;
   }
 
-  const layout = {
-    version: PROFILE_SETTINGS_VERSION,
+  return {
     order: Array.from(order),
     hidden,
     expanded,
   };
-  return layout;
 }

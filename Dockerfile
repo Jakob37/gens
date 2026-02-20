@@ -1,10 +1,19 @@
+################
+# BUILDER NODE #
+################
+
+FROM node:24-alpine AS node-builder
+WORKDIR /usr/src/app
+COPY package.json package-lock.json webpack.config.cjs gulpfile.js tsconfig.json ./
+COPY frontend frontend
+RUN npm install && npm run build
+
 ##################
 # BUILDER PYTHON #
 ##################
 
 FROM python:3.12 AS python-builder
 
-# Set build variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
@@ -13,6 +22,12 @@ WORKDIR /usr/src/app
 COPY gens gens/
 COPY README.md LICENSE pyproject.toml ./
 
+# Copy compiled web assets INTO the python package before building the wheel
+COPY --from=node-builder /usr/src/app/build/css/error.min.css ./gens/static/css/
+COPY --from=node-builder /usr/src/app/build/css/home.min.css /usr/src/app/build/css/landing.min.css /usr/src/app/build/css/about.min.css ./gens/blueprints/home/static/
+COPY --from=node-builder /usr/src/app/build/*/gens.min.* ./gens/blueprints/gens/static/
+
+
 RUN apt-get update &&                                                     \
     apt-get upgrade -y &&                                                 \
     apt-get install -y --no-install-recommends python3-pip                \
@@ -20,18 +35,6 @@ RUN apt-get update &&                                                     \
     pip install --no-cache-dir --upgrade pip &&                           \
     pip install --no-cache-dir hatch &&                                   \
     hatch build -t wheel /usr/src/app/wheels
-    #pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/app/wheels  --requirement requirements.txt  \
-
-
-################
-# BUILDER NODE #
-################
-
-FROM node:20.8.1-alpine AS node-builder
-WORKDIR /usr/src/app
-COPY package.json package-lock.json webpack.config.cjs gulpfile.js tsconfig.json ./
-COPY frontend frontend
-RUN npm install && npm run build
 
 #########
 # FINAL #
@@ -62,11 +65,6 @@ RUN apt-get update &&                              \
     rm -rf /var/lib/apt/lists/* &&                 \
     rm -rf /wheels
 
-# copy compiled web assetes
-COPY --from=node-builder /usr/src/app/build/css/error.min.css gens/static/css/
-COPY --from=node-builder /usr/src/app/build/css/home.min.css /usr/src/app/build/css/landing.min.css /usr/src/app/build/css/about.min.css gens/blueprints/home/static/
-COPY --from=node-builder /usr/src/app/build/*/gens.min.* gens/blueprints/gens/static/
-
 # make mountpoints and change ownership of app
 RUN mkdir -p /access /fs1/results /fs1/results_dev && \
     chown -R worker:worker /access /fs1 /fs1/results_dev
@@ -87,7 +85,6 @@ CMD gunicorn -k uvicorn.workers.UvicornWorker \
     --chdir /home/worker/ \
     --proxy-protocol \
     --forwarded-allow-ips="10.0.2.100,127.0.0.1" \
-    --log-syslog \
     --access-logfile - \
     --error-logfile - \
     --log-level="warning" \

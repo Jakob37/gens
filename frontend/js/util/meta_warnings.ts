@@ -7,15 +7,19 @@ export function getMetaWarnings(
   threshold: WarningThreshold,
   rowName: string,
   value: string,
-  sex: string | null,
+  sex: Sex | null,
 ): string | null {
   const parsedFloat = parseFloat(value);
   if (isNaN(parsedFloat)) {
     return null;
   }
+
+  if (shouldIgnoreWarning(threshold, rowName, sex)) {
+    return null;
+  }
+
   let exceeds;
   if (threshold.kind == "estimated_chromosome_count_deviate") {
-
     const chromosome = parseChromosome(rowName);
     if (!chromosome) {
       return null;
@@ -37,13 +41,12 @@ export function getMetaWarnings(
   }
 
   if (exceeds) {
-
     let threshold_message = threshold.message;
     if (threshold.size) {
-      threshold_message + ` (${threshold.size})`
+      threshold_message += ` (${threshold.size})`;
     }
     if (threshold.max_deviation) {
-      threshold_message + ` (${threshold.max_deviation})`
+      threshold_message += ` (${threshold.max_deviation})`;
     }
 
     return threshold_message;
@@ -77,7 +80,6 @@ function exceedsCopyNumberDeviation(
   maxDeviation: number,
   sex?: string,
 ): boolean {
-
   const normalizedChrom = normalizeChromosomeLabel(chromosome);
 
   const isSexChromosome = ["X", "Y"].includes(normalizedChrom);
@@ -109,4 +111,54 @@ function isMaleSex(sex?: string): boolean {
   }
   const normalized = sex.trim().toLowerCase();
   return normalized === "male" || normalized === "m";
+}
+
+/**
+ * Conditionally don't warn
+ * For instance if sex chromosomes are expected to behave differently
+ */
+function shouldIgnoreWarning(
+  threshold: WarningThreshold,
+  rowName: string,
+  sex: Sex | null,
+): boolean {
+  const ignoreRules = normalizeIgnoreRules(threshold.ignore_when);
+  if (ignoreRules.length === 0) {
+    return false;
+  }
+
+  return ignoreRules.some((rule) => matchesIgnoreRule(rule, rowName, sex));
+}
+
+function normalizeIgnoreRules(
+  ignoreWhen?: WarningIgnore | WarningIgnore[],
+): WarningIgnore[] {
+  if (!ignoreWhen) {
+    return [];
+  }
+  return Array.isArray(ignoreWhen) ? ignoreWhen : [ignoreWhen];
+}
+
+function matchesIgnoreRule(
+  rule: WarningIgnore,
+  rowName: string,
+  sex: Sex | null,
+): boolean {
+  if (rule.sex && rule.sex !== sex) {
+    return false;
+  }
+
+  if (rule.row && rule.row !== rowName) {
+    return false;
+  }
+
+  if (rule.chromosome) {
+    const normalizedChromosome = normalizeChromosomeLabel(rule.chromosome);
+    const normalizedRow = normalizeChromosomeLabel(rowName);
+    if (!normalizedChromosome || normalizedChromosome !== normalizedRow) {
+      return false;
+    }
+  }
+
+  return true;
 }

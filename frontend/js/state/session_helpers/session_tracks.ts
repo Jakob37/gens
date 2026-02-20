@@ -23,7 +23,6 @@ export class Tracks {
 
   public get(trackId: string): DataTrackSettings {
     const matches = this.tracks.filter((setting) => setting.trackId == trackId);
-
     if (matches.length == 0) {
       throw Error(`No matches found for ID: ${trackId}`);
     } else if (matches.length > 1) {
@@ -33,6 +32,11 @@ export class Tracks {
     }
 
     return matches[0];
+  }
+
+  public hasTrack(trackId: string): boolean {
+    const matches = this.tracks.filter((setting) => setting.trackId == trackId);
+    return matches.length > 0;
   }
 
   public updateSetting(trackId: string, newSetting: DataTrackSettings) {
@@ -156,4 +160,3 @@ export function getArrangedTracks(
 
   return orderedTracks;
 }
-

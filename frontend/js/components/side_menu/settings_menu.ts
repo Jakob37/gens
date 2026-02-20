@@ -1,7 +1,16 @@
-import { COLORS, FONT_SIZE, FONT_WEIGHT, ICONS, SIZES } from "../../constants";
+import {
+  COLORS,
+  FONT_SIZE,
+  FONT_WEIGHT,
+  ICONS,
+  NO_SAMPLE_TYPE_DEFAULT,
+  SIZES,
+} from "../../constants";
 import {
   downloadAsJSON,
-  getSampleFromID as getSampleIDObjFromID,
+  getCaseLabel,
+  getSampleIdentifierFromID,
+  getSampleLabel,
   getSampleKey,
   removeChildren,
 } from "../../util/utils";
@@ -13,6 +22,7 @@ import { SampleRow } from "./sample_row";
 import { HighlightRow } from "./highlight_row";
 import { IconButton } from "../util/icon_button";
 import { GensSession } from "../../state/gens_session";
+import { clearCachedData } from "../../util/storage";
 
 export interface TrackHeights {
   bandCollapsed: number;
@@ -108,13 +118,13 @@ template.innerHTML = String.raw`
     <div class="header">Color tracks by</div>
   </div>
   <div>
-    <choice-select id="color-by-select"></choice-select>
+    <choice-select id="color-by-select" multiple></choice-select>
   </div>
   <flex-row class="header-row">
     <div class="header">Samples</div>
     <flex-row id="samples-header-row">
       <choice-select id="sample-select"></choice-select>
-      <icon-button id="add-sample" icon="${ICONS.plus}"></icon-button>
+      <icon-button id="add-sample" icon="${ICONS.plus}" title="Add sample from other case"></icon-button>
     </flex-row>
   </flex-row>
   <div id="samples-overview"></div>
@@ -123,16 +133,35 @@ template.innerHTML = String.raw`
     <div class="header">Main sample</div>
   </flex-row>
   <flex-row class="spread-row">
-    <choice-select id="main-sample-select"></choice-select>
+    <choice-select id="main-sample-select" title="Select what sample to show in overview plot and chromosome view"></choice-select>
     <icon-button id="apply-main-sample" icon="${ICONS.refresh}" title="Apply main sample selection"></icon-button>
   </flex-row>
 
   <div class="header-row">
-    <div class="header">Highlights</div>
+    <div class="header" title="Highlights made in marker mode (toggled by clicking the pen or M) are shown here">Highlights</div>
   </div>
   <div id="highlights-overview"></div>
 
-
+  <div class="header-row">
+    <div class="header">
+      User profile
+    </div>
+  </div>
+  <flex-row class="spread-row">
+    <div>Current profile key</div>
+    <div id="current-profile"></div>
+  </flex-row>
+  <flex-row class="spread-row">
+    <div class="reset-layout-details">
+      <div>Reset profile</div>
+      <div id="reset-layout-info" class="helper-text"></div>
+    </div>
+    <icon-button
+      id="reset-layout"
+      icon="${ICONS.reset}"
+      title="If default profile is present, reset to an admin-defined layout. If not specified, go back to the original settings."
+    ></icon-button>
+  </flex-row>
 
   <details id="advanced-settings">
     <summary>Toggle advanced settings</summary>
@@ -141,15 +170,13 @@ template.innerHTML = String.raw`
     <div class="header-row">
       <div class="header">Import and export profile settings</div>
     </div>
-    <flex-row>
-      <div>Current profile: <span id="current-profile"></span></div>
-    </flex-row>
+
     <flex-row class="spread-row">
       <div>Export profile settings</div>
       <icon-button
         id="export-settings"
         icon="${ICONS.download}"
-        title="Export settings"
+        title="Export JSON with profile settings"
       ></icon-button>
     </flex-row>
     <flex-row class="spread-row">
@@ -157,19 +184,20 @@ template.innerHTML = String.raw`
       <icon-button
         id="import-settings"
         icon="${ICONS.upload}"
-        title="Import settings"
+        title="Import JSON with profile settings"
       ></icon-button>
       <input type="file" id="import-settings-input" accept="application/json,.json,.txt" hidden />
     </flex-row>
+
     <flex-row class="spread-row">
       <div class="reset-layout-details">
-        <div>Reset layout</div>
-        <div id="reset-layout-info" class="helper-text"></div>
+        <div>Clear cached data</div>
+        <div class="helper-text">Removes saved profiles and transcript cache, then reloads.</div>
       </div>
       <icon-button
-        id="reset-layout"
-        icon="${ICONS.reset}"
-        title="Reset layout to default"
+        id="clear-cached-data"
+        icon="${ICONS.trash}"
+        title="Clear cached data and reload"
       ></icon-button>
     </flex-row>
 
@@ -193,7 +221,7 @@ template.innerHTML = String.raw`
       </flex-row>
     </flex-row>
     <flex-row class="spread-row">
-      <div>Default cov y-range</div>
+      <div>Coverage y-range</div>
       <flex-row class="height-inputs">
         <input id="coverage-y-start" class="height-input" type="number" step="0.1">
         <input id="coverage-y-end" class="height-input" type="number" step="0.1">
@@ -201,12 +229,26 @@ template.innerHTML = String.raw`
       </flex-row>
     </flex-row>
     <flex-row class="spread-row">
-      <div>Variant filter threshold</div>
+      <div>Variant rank score threshold</div>
       <flex-row>
         <input id="variant-filter" type="number" step="1" class="height-input">
         <icon-button id="apply-variant-filter" icon="${ICONS.refresh}" title="Apply variant filter"></icon-button>
       </flex-row>
     </flex-row>
+
+    <div class="header-row">
+      <div class="header">Screenshot display names</div>
+    </div>
+    <flex-row class="spread-row">
+      <div>Apply aliases</div>
+      <icon-button id="apply-display-aliases" icon="${ICONS.refresh}" title="Apply case and sample aliases"></icon-button>
+    </flex-row>
+    <flex-row class="spread-row">
+      <div>Current case alias</div>
+      <input id="case-display-alias" class="height-input" type="text" placeholder="e.g. Demo case">
+    </flex-row>
+    <div id="sample-alias-controls"></div>
+    <div id="case-display-alias-info" class="helper-text"></div>
 
     <!-- Tracks overview -->
     <div class="header-row">
@@ -234,6 +276,11 @@ export class SettingsMenu extends ShadowBaseElement {
   private exportProfileSettingsButton: IconButton;
   private importProfileSettingsButton: IconButton;
   private importProfileSettingsInput: HTMLInputElement;
+  private applyDisplayAliasesButton: IconButton;
+  private caseDisplayAliasInput: HTMLInputElement;
+  private sampleAliasControls: HTMLDivElement;
+  private caseDisplayAliasInfo: HTMLDivElement;
+  private sampleAliasInputs: Map<string, HTMLInputElement> = new Map();
 
   private applyDefaultCovYRangeButton: HTMLButtonElement;
   private variantThresholdInput: HTMLInputElement;
@@ -242,6 +289,7 @@ export class SettingsMenu extends ShadowBaseElement {
   private applyDotTrackHeightsButton: HTMLButtonElement;
   private applyBandTrackHeightButton: HTMLButtonElement;
   private resetLayoutButton: IconButton;
+  private clearCachedDataButton: IconButton;
   private resetLayoutInfo: HTMLDivElement;
   private currentProfile: HTMLSpanElement;
 
@@ -259,8 +307,8 @@ export class SettingsMenu extends ShadowBaseElement {
   private onRemoveSample: (sample: Sample) => void;
   private getTrackHeights: () => TrackHeights;
   private setTrackHeights: (sizes: TrackHeights) => void;
-  private onColorByChange: (annotId: string | null) => void;
-  private getColorAnnotation: () => string | null;
+  private onColorByChange: (annotIds: string[]) => void;
+  private getColorAnnotations: () => string[];
   private onApplyDefaultCovRange: (rng: Rng) => void;
   private onSetAnnotationSelection: (ids: string[]) => void;
   private onSetGeneListSelection: (ids: string[]) => void;
@@ -268,8 +316,13 @@ export class SettingsMenu extends ShadowBaseElement {
   private onToggleTrackHidden: (trackId: string) => void;
   private onToggleTrackExpanded: (trackId: string) => void;
   private onApplyMainSample: (sample: Sample) => void;
+  private onApplyDisplayAliases: (
+    caseId: string,
+    caseAlias: string | null,
+    sampleAliases: { sample: Sample; alias: string | null }[],
+  ) => void;
   private getProfileSettings: () => ProfileSettings;
-  private applyProfileSettings: (layout: ProfileSettings) => void;
+  private applyProfileSettings: (layout: ProfileSettings) => Promise<void>;
   private onResetLayout: () => void;
 
   public isInitialized: boolean = false;
@@ -287,7 +340,7 @@ export class SettingsMenu extends ShadowBaseElement {
     onAddSample: (sample: Sample) => Promise<void>,
     onRemoveSample: (sample: Sample) => void,
     setTrackInfo: (trackHeights: TrackHeights) => void,
-    onColorByChange: (annotId: string | null) => void,
+    onColorByChange: (annotIds: string[]) => void,
     onApplyDefaultCovRange: (rng: Rng) => void,
     onSetAnnotationSelection: (ids: string[]) => void,
     onSetGeneListSelection: (ids: string[]) => void,
@@ -295,8 +348,13 @@ export class SettingsMenu extends ShadowBaseElement {
     onToggleTrackHidden: (trackId: string) => void,
     onToggleTrackExpanded: (trackId: string) => void,
     onApplyMainSample: (sample: Sample) => void,
+    onApplyDisplayAliases: (
+      caseId: string,
+      caseAlias: string | null,
+      sampleAliases: { sample: Sample; alias: string | null }[],
+    ) => void,
     getProfileSettings: () => ProfileSettings,
-    applyProfileSettings: (layout: ProfileSettings) => void,
+    applyProfileSettings: (layout: ProfileSettings) => Promise<void>,
     onResetLayout: () => void,
   ) {
     this.session = session;
@@ -319,7 +377,7 @@ export class SettingsMenu extends ShadowBaseElement {
     this.getTrackHeights = () => session.profile.getTrackHeights();
     this.setTrackHeights = setTrackInfo;
     this.onColorByChange = onColorByChange;
-    this.getColorAnnotation = () => session.profile.getColorAnnotation();
+    this.getColorAnnotations = () => session.profile.getColorAnnotations();
 
     this.onApplyDefaultCovRange = onApplyDefaultCovRange;
 
@@ -329,6 +387,7 @@ export class SettingsMenu extends ShadowBaseElement {
     this.onToggleTrackHidden = onToggleTrackHidden;
     this.onToggleTrackExpanded = onToggleTrackExpanded;
     this.onApplyMainSample = onApplyMainSample;
+    this.onApplyDisplayAliases = onApplyDisplayAliases;
     this.getProfileSettings = getProfileSettings;
     this.applyProfileSettings = applyProfileSettings;
     this.onResetLayout = onResetLayout;
@@ -361,6 +420,18 @@ export class SettingsMenu extends ShadowBaseElement {
     this.importProfileSettingsInput = this.root.querySelector(
       "#import-settings-input",
     ) as HTMLInputElement;
+    this.applyDisplayAliasesButton = this.root.querySelector(
+      "#apply-display-aliases",
+    ) as IconButton;
+    this.caseDisplayAliasInput = this.root.querySelector(
+      "#case-display-alias",
+    ) as HTMLInputElement;
+    this.sampleAliasControls = this.root.querySelector(
+      "#sample-alias-controls",
+    ) as HTMLDivElement;
+    this.caseDisplayAliasInfo = this.root.querySelector(
+      "#case-display-alias-info",
+    ) as HTMLDivElement;
 
     this.applyDefaultCovYRangeButton = this.root.querySelector(
       "#apply-default-cov-y-range",
@@ -371,6 +442,7 @@ export class SettingsMenu extends ShadowBaseElement {
     this.variantThresholdInput = this.root.querySelector("#variant-filter");
     this.applyMainSample = this.root.querySelector("#apply-main-sample");
     this.resetLayoutButton = this.root.querySelector("#reset-layout");
+    this.clearCachedDataButton = this.root.querySelector("#clear-cached-data");
     this.resetLayoutInfo = this.root.querySelector(
       "#reset-layout-info",
     ) as HTMLDivElement;
@@ -406,11 +478,8 @@ export class SettingsMenu extends ShadowBaseElement {
     this.addElementListener(this.addSampleButton, "click", () => {
       const caseId_sampleId = this.sampleSelect.getValue().value;
 
-      const sampleIdObj = getSampleIDObjFromID(caseId_sampleId);
-      const sample = this.session.getSample(
-        sampleIdObj.caseId,
-        sampleIdObj.sampleId,
-      );
+      const sampleIdObj = getSampleIdentifierFromID(caseId_sampleId);
+      const sample = this.session.getSample(sampleIdObj);
       this.onAddSample(sample);
     });
 
@@ -424,6 +493,16 @@ export class SettingsMenu extends ShadowBaseElement {
 
     this.addElementListener(this.resetLayoutButton, "click", () => {
       this.onResetLayout();
+    });
+
+    this.addElementListener(this.clearCachedDataButton, "click", async () => {
+      try {
+        await clearCachedData();
+      } catch (error) {
+        console.error("Failed to clear cached data", error);
+      } finally {
+        window.location.reload();
+      }
     });
 
     this.addElementListener(
@@ -451,6 +530,10 @@ export class SettingsMenu extends ShadowBaseElement {
       this.onApplyMainSample(targetSample);
     });
 
+    this.addElementListener(this.applyDisplayAliasesButton, "click", () => {
+      this.applyDisplayAliases();
+    });
+
     this.addElementListener(this.annotSelect, "change", () => {
       const ids = this.annotSelect
         .getValues()
@@ -459,9 +542,10 @@ export class SettingsMenu extends ShadowBaseElement {
     });
 
     this.addElementListener(this.colorBySelect, "change", () => {
-      const val = this.colorBySelect.getValue();
-      const id = val && val.value != "" ? val.value : null;
-      this.onColorByChange(id);
+      const ids = this.colorBySelect
+        .getValues()
+        .map((obj) => obj.value as string);
+      this.onColorByChange(ids);
     });
 
     this.addElementListener(this.geneListSelect, "change", () => {
@@ -528,25 +612,102 @@ export class SettingsMenu extends ShadowBaseElement {
 
     const allAnnotChoices = getAnnotationChoices(this.allAnnotationSources, []);
     const colorChoices = [
-      { label: "None", value: "", selected: this.getColorAnnotation() == null },
       ...allAnnotChoices.map((c) => ({
         ...c,
-        selected: c.value === this.getColorAnnotation(),
+        selected: this.getColorAnnotations().includes(c.value),
       })),
     ];
     this.colorBySelect.setValues(colorChoices);
     this.setupSampleSelect();
+    this.updateCaseAliasSection();
+    this.renderSampleAliasControls();
   }
 
   private setupSampleSelect() {
     const rawSamples = this.getAllSamples();
     const allSamples = rawSamples.map((s) => {
       return {
-        label: `${s.sampleId} (case: ${s.caseId})`,
+        label: `${getSampleLabel(s.sampleId, s.sampleAlias)}, case: ${getCaseLabel(s.caseId, s.displayCaseId, s.caseAlias)}`,
         value: getSampleKey(s),
       };
     });
     this.sampleSelect.setValues(allSamples);
+  }
+
+  private updateCaseAliasSection() {
+    if (!this.caseDisplayAliasInput || !this.caseDisplayAliasInfo) {
+      return;
+    }
+
+    const mainSample = this.session.getMainSample();
+    const currAlias = this.session.getSessionCaseDisplayAlias(
+      mainSample.caseId,
+    );
+    this.caseDisplayAliasInput.value = currAlias ?? "";
+    this.caseDisplayAliasInfo.textContent =
+      "Aliases only affect viewer labels and reset on page refresh.";
+  }
+
+  private renderSampleAliasControls() {
+    if (!this.sampleAliasControls) {
+      return;
+    }
+
+    this.sampleAliasInputs.clear();
+    removeChildren(this.sampleAliasControls);
+    this.sampleAliasControls.style.display = "flex";
+    this.sampleAliasControls.style.flexDirection = "column";
+    this.sampleAliasControls.style.gap = `${SIZES.xs}px`;
+
+    for (const sample of this.getCurrentSamples()) {
+      const row = document.createElement("flex-row");
+      row.className = "spread-row";
+
+      const label = document.createElement("div");
+      label.textContent = `${sample.sampleId} alias`;
+      row.appendChild(label);
+
+      const controls = document.createElement("flex-row");
+      controls.className = "height-inputs";
+
+      const input = document.createElement("input");
+      input.className = "height-input";
+      input.type = "text";
+      input.placeholder = "e.g. Proband";
+      input.value =
+        this.session.getSessionSampleDisplayAlias(
+          sample.caseId,
+          sample.sampleId,
+          sample.genomeBuild,
+        ) ?? "";
+      this.sampleAliasInputs.set(getSampleKey(sample), input);
+
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          this.applyDisplayAliases();
+        }
+      });
+
+      controls.appendChild(input);
+      row.appendChild(controls);
+      this.sampleAliasControls.appendChild(row);
+    }
+  }
+
+  private applyDisplayAliases() {
+    const mainSample = this.session.getMainSample();
+    const caseAlias = this.caseDisplayAliasInput.value.trim();
+
+    const sampleAliases = this.getCurrentSamples().map((sample) => {
+      const input = this.sampleAliasInputs.get(getSampleKey(sample));
+      const alias = input?.value.trim() ?? "";
+      return {
+        sample,
+        alias: alias || null,
+      };
+    });
+
+    this.onApplyDisplayAliases(mainSample.caseId, caseAlias || null, sampleAliases);
   }
 
   private updateResetLayoutInfo() {
@@ -559,7 +720,6 @@ export class SettingsMenu extends ShadowBaseElement {
 
     if (defaultProfile) {
       const { fileName } = defaultProfile;
-      const displayName = fileName ? ` (${fileName})` : "";
       this.resetLayoutInfo.textContent = `Default profile (${fileName}) available for ${profileKey}`;
     } else {
       this.resetLayoutInfo.textContent =
@@ -609,6 +769,8 @@ export class SettingsMenu extends ShadowBaseElement {
     const mainSampleId = getSampleKey(mainSample);
     const mainSampleChoices = getMainSampleChoices(samples, mainSampleId);
     this.mainSampleSelect.setValues(mainSampleChoices);
+    this.updateCaseAliasSection();
+    this.renderSampleAliasControls();
 
     removeChildren(this.highlightsOverview);
     const highlightsSection = getHighlightsSection(
@@ -628,20 +790,12 @@ export class SettingsMenu extends ShadowBaseElement {
     this.coverageYStartElem.value = `${covStart}`;
     this.coverageYEndElem.value = `${covEnd}`;
     if (this.colorBySelect) {
-      const selectedAnnotation = this.getColorAnnotation();
-      const selectedId = selectedAnnotation != null ? selectedAnnotation : "";
-      const choices = this.allAnnotationSources.map((source) => {
-        return {
-          value: source.track_id,
-          label: source.name,
-          selected: source.track_id === selectedId,
-        };
-      });
-      choices.unshift({
-        label: "None",
-        value: "",
-        selected: selectedId === "",
-      });
+      const selectedIds = new Set(this.getColorAnnotations());
+      const choices = this.allAnnotationSources.map((source) => ({
+        value: source.track_id,
+        label: source.name,
+        selected: selectedIds.has(source.track_id),
+      }));
       this.colorBySelect.setValues(choices);
     }
   }
@@ -668,7 +822,7 @@ export class SettingsMenu extends ShadowBaseElement {
       if (!profileSettings) {
         throw new Error("Invalid track layout file");
       }
-      this.applyProfileSettings(profileSettings);
+      await this.applyProfileSettings(profileSettings);
     } catch (error) {
       console.error("Failed to import track layout", error);
       window.alert(
@@ -701,7 +855,7 @@ function getMainSampleChoices(
     const id = getSampleKey(sample);
     const choice = {
       value: id,
-      label: `${sample.sampleId} (${sample.sampleType}, case: ${sample.caseId})`,
+      label: `${getSampleLabel(sample.sampleId, sample.sampleAlias)} (${sample.sampleType || NO_SAMPLE_TYPE_DEFAULT}, case: ${getCaseLabel(sample.caseId, sample.displayCaseId, sample.caseAlias)})`,
       selected: prevSelected == id,
     };
     choices.push(choice);

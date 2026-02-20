@@ -4,7 +4,7 @@ import {
   META_WARNING_ROW_CLASS,
 } from "../../util/meta_warnings";
 import { createTable, formatValue, parseTableFromMeta } from "../../util/table";
-import { removeChildren } from "../../util/utils";
+import { getCaseLabel, getSampleLabel, removeChildren } from "../../util/utils";
 import { getEntry } from "../util/menu_utils";
 import { ShadowBaseElement } from "../util/shadowbaseelement";
 
@@ -104,18 +104,27 @@ export class InfoMenu extends ShadowBaseElement {
     for (const sample of samples) {
       const header = document.createElement("div");
       header.className = "header";
-      header.textContent = sample.sampleId;
+      header.textContent = getSampleLabel(sample.sampleId, sample.sampleAlias);
       this.entries.appendChild(header);
-
-      const padRight = `${SIZES.m}px`;
 
       const simpleDivs = [];
       const tables = [];
 
-      simpleDivs.push(getEntry({ key: "Case ID", value: sample.caseId }))
+      simpleDivs.push(
+        getEntry({
+          key: "Case ID",
+          value: getCaseLabel(
+            sample.caseId,
+            sample.displayCaseId,
+            sample.caseAlias,
+          ),
+        }),
+      );
 
       if (sample.sampleType) {
-        simpleDivs.push(getEntry({ key: "Sample type", value: sample.sampleType }));
+        simpleDivs.push(
+          getEntry({ key: "Sample type", value: sample.sampleType }),
+        );
       }
       // Optional fields
       const sex = sample.sex;
@@ -130,7 +139,7 @@ export class InfoMenu extends ShadowBaseElement {
           if (meta.row_name_header == null) {
             const divs = getSimpleElement(meta);
             for (const div of divs) {
-              simpleDivs.push(div)
+              simpleDivs.push(div);
             }
             continue;
           }
@@ -140,7 +149,7 @@ export class InfoMenu extends ShadowBaseElement {
 
           const { tableData } = parseTableFromMeta(meta, errors);
           const htmlTable = createTable(tableData);
-          tables.push(htmlTable)
+          tables.push(htmlTable);
         }
       }
 
@@ -150,7 +159,7 @@ export class InfoMenu extends ShadowBaseElement {
       }
 
       for (const table of tables) {
-        this.entries.appendChild(table)
+        this.entries.appendChild(table);
       }
     }
   }
@@ -168,7 +177,5 @@ function getSimpleElement(meta: SampleMetaEntry): HTMLDivElement[] {
   }
   return htmlEntries;
 }
-
-
 
 customElements.define("info-page", InfoMenu);

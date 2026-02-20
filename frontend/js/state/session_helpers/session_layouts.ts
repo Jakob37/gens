@@ -3,6 +3,7 @@ import {
   STYLE,
   PROFILE_SETTINGS_VERSION,
   DEFAULT_VARIANT_THRES,
+  NO_SAMPLE_TYPE_DEFAULT,
 } from "../../constants";
 import { loadProfileSettings, saveProfileToBrowser } from "../../util/storage";
 
@@ -25,24 +26,35 @@ export class SessionProfiles {
     const profileKey = this.computeProfileSignature(samples);
     this.profileKey = profileKey;
 
-    const userProfile = loadProfileSettings(profileKey);
-    this.defaultProfiles = defaultProfiles;
+    let userProfile = loadProfileSettings(profileKey, PROFILE_SETTINGS_VERSION);
+    if (userProfile != null && userProfile.version !== PROFILE_SETTINGS_VERSION) {
+      console.error(
+        `Gens profile version mismatch for key "${profileKey}". ` +
+          `Found v${userProfile.version ?? "missing"}, expected v${PROFILE_SETTINGS_VERSION}. ` +
+          "Falling back to no profile. Ask your admin to update this profile.",
+      );
+      userProfile = null;
+    }
+    this.defaultProfiles = getVersionCompatibleDefaultProfiles(defaultProfiles);
     this.baseTrackLayout = null;
-    const defaultProfile = cloneProfile(defaultProfiles[profileKey]);
+    const defaultProfile = cloneProfile(this.defaultProfiles[profileKey]);
 
     const baseProfile = {
       version: PROFILE_SETTINGS_VERSION,
       profileKey,
       layout: null,
-      colorAnnotationId: null,
+      caseDisplayAliases: {},
+      sampleDisplayAliases: {},
+      colorAnnotationIds: [],
       variantThreshold: DEFAULT_VARIANT_THRES,
       annotationSelections: [],
       coverageRange: DEFAULT_COV_Y_RANGE,
       trackHeights: defaultTrackHeights,
     };
 
-    const profile: ProfileSettings =
-      userProfile || defaultProfile || baseProfile;
+    const profile = normalizeProfile(
+      userProfile || defaultProfile || baseProfile,
+    );
 
     const profileType = userProfile
       ? "user"
@@ -67,6 +79,54 @@ export class SessionProfiles {
     return this.profile.trackHeights;
   }
 
+  public getCaseDisplayAlias(caseId: string): string | null {
+    return this.profile.caseDisplayAliases?.[caseId] ?? null;
+  }
+
+  public setCaseDisplayAlias(caseId: string, alias: string | null): void {
+    if (this.profile.caseDisplayAliases == null) {
+      this.profile.caseDisplayAliases = {};
+    }
+
+    if (alias == null || alias.trim() === "") {
+      delete this.profile.caseDisplayAliases[caseId];
+    } else {
+      this.profile.caseDisplayAliases[caseId] = alias.trim();
+    }
+    this.save();
+  }
+
+  public getSampleDisplayAlias(
+    caseId: string,
+    sampleId: string,
+    genomeBuild: number,
+  ): string | null {
+    return (
+      this.profile.sampleDisplayAliases?.[
+        this.getSampleAliasKey(caseId, sampleId, genomeBuild)
+      ] ?? null
+    );
+  }
+
+  public setSampleDisplayAlias(
+    caseId: string,
+    sampleId: string,
+    genomeBuild: number,
+    alias: string | null,
+  ): void {
+    if (this.profile.sampleDisplayAliases == null) {
+      this.profile.sampleDisplayAliases = {};
+    }
+
+    const aliasKey = this.getSampleAliasKey(caseId, sampleId, genomeBuild);
+    if (alias == null || alias.trim() === "") {
+      delete this.profile.sampleDisplayAliases[aliasKey];
+    } else {
+      this.profile.sampleDisplayAliases[aliasKey] = alias.trim();
+    }
+    this.save();
+  }
+
   public setTrackHeights(heights: TrackHeights) {
     this.profile.trackHeights = heights;
     this.save();
@@ -89,13 +149,13 @@ export class SessionProfiles {
     this.save();
   }
 
-  public setColorAnnotation(id: string | null) {
-    this.profile.colorAnnotationId = id;
+  public setColorAnnotations(ids: string[]) {
+    this.profile.colorAnnotationIds = ids;
     this.save();
   }
 
-  public getColorAnnotation(): string | null {
-    return this.profile.colorAnnotationId;
+  public getColorAnnotations(): string[] {
+    return this.profile.colorAnnotationIds;
   }
 
   public getAnnotationSelections(): string[] {
@@ -119,7 +179,9 @@ export class SessionProfiles {
       version: PROFILE_SETTINGS_VERSION,
       profileKey: this.profileKey,
       layout: null,
-      colorAnnotationId: null,
+      caseDisplayAliases: {},
+      sampleDisplayAliases: {},
+      colorAnnotationIds: [],
       variantThreshold: DEFAULT_VARIANT_THRES,
       annotationSelections: [],
       coverageRange: DEFAULT_COV_Y_RANGE,
@@ -130,7 +192,7 @@ export class SessionProfiles {
       ? { ...baseProfile, layout: this.baseTrackLayout }
       : baseProfile;
 
-    const profile: ProfileSettings = defaultProfile || baseLayoutProfile;
+    const profile = normalizeProfile(defaultProfile || baseLayoutProfile);
 
     const profileType = defaultProfile ? "default" : "none";
     console.log(`Used profile (type: ${profileType})`, profile);
@@ -162,7 +224,7 @@ export class SessionProfiles {
   }
 
   public loadProfile(profile: ProfileSettings): void {
-    this.profile = profile;
+    this.profile = normalizeProfile(profile);
   }
 
   public updateProfileKey(samples: Sample[]): void {
@@ -172,10 +234,19 @@ export class SessionProfiles {
 
   private computeProfileSignature(samples: Sample[]): string {
     const types = new Set(
-      samples.map((s) => (s.sampleType ? s.sampleType : "unknown")).sort(),
+      samples
+        .map((s) => (s.sampleType ? s.sampleType : NO_SAMPLE_TYPE_DEFAULT))
+        .sort(),
     );
 
     return Array.from(types).join("+");
+  }
+  private getSampleAliasKey(
+    caseId: string,
+    sampleId: string,
+    genomeBuild: number,
+  ): string {
+    return `${caseId}__${sampleId}__${genomeBuild}`;
   }
 }
 
@@ -187,4 +258,37 @@ function cloneProfile(
   }
 
   return JSON.parse(JSON.stringify(profile)) as ProfileSettings;
+}
+
+function normalizeProfile(profile: ProfileSettings): ProfileSettings {
+  return {
+    ...profile,
+    caseDisplayAliases: profile.caseDisplayAliases ?? {},
+    sampleDisplayAliases: profile.sampleDisplayAliases ?? {},
+  };
+}
+
+/**
+ * Defined default profiles may not have been updated to the latest profile
+ * version (as defined by the constant PROFILE_SETTINGS_VERSION).
+ * These should not be used and give clear errors.
+ */
+function getVersionCompatibleDefaultProfiles(
+  defaultProfiles: Record<string, ProfileSettings>,
+): Record<string, ProfileSettings> {
+  const compatibleProfiles: Record<string, ProfileSettings> = {};
+
+  for (const [profileKey, profile] of Object.entries(defaultProfiles)) {
+    if (profile.version !== PROFILE_SETTINGS_VERSION) {
+      console.error(
+        `Gens profile version mismatch for key "${profileKey}". ` +
+          `Found v${profile.version ?? "missing"}, expected v${PROFILE_SETTINGS_VERSION}. ` +
+          "Ignoring default profile. Ask your admin to update this profile.",
+      );
+      continue;
+    }
+    compatibleProfiles[profileKey] = profile;
+  }
+
+  return compatibleProfiles;
 }

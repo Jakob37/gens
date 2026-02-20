@@ -373,15 +373,59 @@ export function setDiff<T>(set1: Set<T>, set2: Set<T>): Set<T> {
   return diff;
 }
 
-export function getSampleKey(sample: Sample): string {
-  return `${sample.caseId}${COMBINED_SAMPLE_ID_DIVIDER}${sample.sampleId}`;
+export function getSampleKey(id: SampleIdentifier): string {
+  return `${id.caseId}${COMBINED_SAMPLE_ID_DIVIDER}${id.sampleId}${COMBINED_SAMPLE_ID_DIVIDER}${id.genomeBuild}`;
 }
 
-export function getSampleFromID(id: string): Sample {
+export function normalizeAlias(alias?: string | null): string | null {
+  if (alias == null) {
+    return null;
+  }
+
+  const trimmedAlias = alias.trim();
+  if (trimmedAlias === "") {
+    return null;
+  }
+  return trimmedAlias;
+}
+
+export function getSampleLabel(
+  sampleId: string,
+  sampleAlias?: string | null,
+): string {
+  return normalizeAlias(sampleAlias) ?? sampleId;
+}
+
+export function formatCaseLabel(
+  caseId: string,
+  displayCaseId?: string | null,
+): string {
+  if (displayCaseId == null) {
+    return caseId;
+  }
+
+  return `${displayCaseId} (${caseId})`;
+}
+
+export function getCaseLabel(
+  caseId: string,
+  displayCaseId?: string | null,
+  caseAlias?: string | null,
+): string {
+  return normalizeAlias(caseAlias) ?? formatCaseLabel(caseId, displayCaseId);
+}
+
+export function getSampleIdentifierFromID(id: string): SampleIdentifier {
   const fields = id.split(COMBINED_SAMPLE_ID_DIVIDER);
+  if (fields.length !== 3) {
+    throw new Error(
+      `"Expected three identifiers for the sample, found ${fields} in ${COMBINED_SAMPLE_ID_DIVIDER}`,
+    );
+  }
   const sample = {
     caseId: fields[0],
     sampleId: fields[1],
+    genomeBuild: Number.parseInt(fields[2]),
   };
   return sample;
 }
@@ -391,7 +435,7 @@ export function downloadAsJSON(object: unknown, filename: string) {
   const blob = new Blob([serialized], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  
+
   link.href = url;
   link.download = filename;
   document.body.appendChild(link);

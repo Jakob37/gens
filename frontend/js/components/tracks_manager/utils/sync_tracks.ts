@@ -1,7 +1,7 @@
 import { TRACK_IDS, USED_TRACK_HEIGHTS } from "../../../constants";
 import { GensSession } from "../../../state/gens_session";
 import {
-  getSampleFromID as getSampleIdsFromID,
+  getSampleIdentifierFromID,
   getSampleKey,
   removeOne,
   setDiff,
@@ -39,18 +39,20 @@ export async function syncDataTrackSettings(
   const { removedIds: removedSamples, sampleSettings } = await sampleDiff(
     samples,
     lastRenderedSamples,
-    (caseId: string, sampleId: string) => session.getSample(caseId, sampleId),
-    (caseId, sampleId) => dataSources.getSampleAnnotSources(caseId, sampleId),
+    (id: SampleIdentifier) => session.getSample(id),
+    (sample: Sample) => session.getDisplaySampleLabel(sample),
+    (id: SampleIdentifier) => dataSources.getSampleAnnotSources(id),
     () => session.profile.getCoverageRange(),
   );
   const removedSampleTrackIds = [];
   for (const combinedSampleId of removedSamples) {
-    const targetSample = getSampleIdsFromID(combinedSampleId);
+    const targetSample = getSampleIdentifierFromID(combinedSampleId);
     for (const track of origTrackSettings) {
       if (
         track.sample &&
         track.sample.caseId == targetSample.caseId &&
-        track.sample.sampleId == targetSample.sampleId
+        track.sample.sampleId == targetSample.sampleId &&
+        track.sample.genomeBuild == targetSample.genomeBuild
       ) {
         removedSampleTrackIds.push(track.trackId);
       }
@@ -64,34 +66,53 @@ export async function syncDataTrackSettings(
     removeOne(returnTrackSettings, (setting) => setting.trackId == removeId);
   }
 
+  for (const setting of returnTrackSettings) {
+    if (setting.sample == null) {
+      continue;
+    }
+    const labelPrefix = session.getDisplaySampleLabel(setting.sample);
+    if (setting.trackType === "dot-cov") {
+      setting.trackLabel = `${labelPrefix} cov`;
+    } else if (setting.trackType === "dot-baf") {
+      setting.trackLabel = `${labelPrefix} baf`;
+    } else if (setting.trackType === "variant") {
+      setting.trackLabel = `${labelPrefix} Variants`;
+    }
+  }
+
   returnTrackSettings.push(...sampleSettings);
   returnTrackSettings.push(...newAnnotationSettings);
 
   if (!returnTrackSettings.find((track) => track.trackId == "genes")) {
-    const geneTrackSettings: DataTrackSettings = {
-      trackId: TRACK_IDS.genes,
-      trackLabel: "Genes",
-      trackType: "gene",
-      height: {
-        collapsedHeight: USED_TRACK_HEIGHTS.trackView.collapsedBand,
-      },
-      showLabelWhenCollapsed: true,
-      isExpanded: true,
-      isHidden: false,
-    };
+    const geneTrackSettings = getGeneTrackSettings();
     returnTrackSettings.push(geneTrackSettings);
   }
 
   return { settings: returnTrackSettings, samples: [...samples] };
 }
 
+export function getGeneTrackSettings() {
+  const geneTrackSettings: DataTrackSettings = {
+    trackId: TRACK_IDS.genes,
+    trackLabel: "Genes",
+    trackType: "gene",
+    height: {
+      collapsedHeight: USED_TRACK_HEIGHTS.trackView.collapsedBand,
+    },
+    showLabelWhenCollapsed: true,
+    isExpanded: true,
+    isHidden: false,
+  };
+  return geneTrackSettings;
+}
+
 async function sampleDiff(
   samples: Sample[],
   lastRenderedSamples: Sample[],
-  getSample: (caseId: string, sampleId: string) => Sample,
+  getSample: (id: SampleIdentifier) => Sample,
+  getSampleDisplayLabel: (sample: Sample) => string,
   getSampleAnnotSources: (
-    caseId: string,
-    sampleId: string,
+    id: SampleIdentifier,
   ) => Promise<{ id: string; name: string }[]>,
   getCoverageRange: () => Rng,
 ): Promise<{
@@ -111,6 +132,7 @@ async function sampleDiff(
   const sampleSettings = await getSampleTrackSettings(
     newCombinedIds,
     getSample,
+    getSampleDisplayLabel,
     getCoverageRange,
     getSampleAnnotSources,
   );
@@ -163,20 +185,21 @@ export function annotationDiff(
 
 export async function getSampleTrackSettings(
   combinedSampleIds: Set<string>,
-  getSample: (caseId: string, sampleId: string) => Sample,
+  getSample: (id: SampleIdentifier) => Sample,
+  getSampleDisplayLabel: (sample: Sample) => string,
   getCoverageRange: () => Rng,
   getSampleAnnotSources: (
-    caseId: string,
-    sampleId: string,
+    id: SampleIdentifier,
   ) => Promise<{ id: string; name: string }[]>,
 ): Promise<DataTrackSettings[]> {
   const sampleSettings = [];
   for (const combinedId of combinedSampleIds) {
-    const sampleIds = getSampleIdsFromID(combinedId);
-    const sample = getSample(sampleIds.caseId, sampleIds.sampleId);
+    const sampleIds = getSampleIdentifierFromID(combinedId);
+    const sample = getSample(sampleIds);
 
     const sampleTracks = await getSampleTracks(
       sample,
+      getSampleDisplayLabel,
       getCoverageRange,
       getSampleAnnotSources,
     );
@@ -186,20 +209,20 @@ export async function getSampleTrackSettings(
 }
 
 async function getSampleTracks(
-  sample: Sample,
+  sampleIdentifier: Sample,
+  getSampleDisplayLabel: (sample: Sample) => string,
   getCoverageRange: () => Rng,
   getSampleAnnotSources: (
-    caseId: string,
-    sampleId: string,
+    id: SampleIdentifier,
   ) => Promise<{ id: string; name: string }[]>,
 ): Promise<DataTrackSettings[]> {
-  // FIXME: Some logic here to distinguish if single or multiple samples opened
-  // FIXME: Loading defaulting
+  const sampleDisplayLabel = getSampleDisplayLabel(sampleIdentifier);
+  const sampleKey = getSampleKey(sampleIdentifier);
   const cov: DataTrackSettings = {
-    trackId: `${sample.sampleId}_${TRACK_IDS.cov}`,
-    trackLabel: `${sample.sampleId} cov`,
+    trackId: `${sampleKey}_${TRACK_IDS.cov}`,
+    trackLabel: `${sampleDisplayLabel} cov`,
     trackType: "dot-cov",
-    sample,
+    sample: sampleIdentifier,
     height: {
       collapsedHeight: USED_TRACK_HEIGHTS.trackView.collapsedDot,
       expandedHeight: USED_TRACK_HEIGHTS.trackView.expandedDot,
@@ -216,10 +239,10 @@ async function getSampleTracks(
   };
 
   const baf: DataTrackSettings = {
-    trackId: `${sample.sampleId}_${TRACK_IDS.baf}`,
-    trackLabel: `${sample.sampleId} baf`,
+    trackId: `${sampleKey}_${TRACK_IDS.baf}`,
+    trackLabel: `${sampleDisplayLabel} baf`,
     trackType: "dot-baf",
-    sample,
+    sample: sampleIdentifier,
     height: {
       collapsedHeight: USED_TRACK_HEIGHTS.trackView.collapsedDot,
       expandedHeight: USED_TRACK_HEIGHTS.trackView.expandedDot,
@@ -236,10 +259,10 @@ async function getSampleTracks(
   };
 
   const variants: DataTrackSettings = {
-    trackId: `${sample.sampleId}_${TRACK_IDS.variants}`,
-    trackLabel: `${sample.sampleId} Variants`,
+    trackId: `${sampleKey}_${TRACK_IDS.variants}`,
+    trackLabel: `${sampleDisplayLabel} Variants`,
     trackType: "variant",
-    sample,
+    sample: sampleIdentifier,
     height: {
       collapsedHeight: USED_TRACK_HEIGHTS.trackView.collapsedBand,
     },
@@ -249,18 +272,16 @@ async function getSampleTracks(
     isHidden: false,
   };
 
-  const sampleSources = await getSampleAnnotSources(
-    sample.caseId,
-    sample.sampleId,
-  );
+  const sampleSources = await getSampleAnnotSources(sampleIdentifier);
 
   const sampleAnnots = [];
   for (const source of sampleSources) {
     const sampleAnnot: DataTrackSettings = {
-      trackId: source.id,
+      trackId: `${sampleKey}_${source.id}`,
       trackLabel: source.name,
       trackType: "sample-annotation",
-      sample,
+      sample: sampleIdentifier,
+      sourceId: source.id,
       height: { collapsedHeight: USED_TRACK_HEIGHTS.trackView.collapsedBand },
       showLabelWhenCollapsed: true,
       yAxis: null,

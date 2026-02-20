@@ -5,6 +5,93 @@ This project adheres to [Semantic Versioning](http://semver.org/)
 
 About changelog [here](https://keepachangelog.com/en/1.0.0/)
 
+## Unreleased
+
+### Added
+
+- New setting (under "settings -> advanced settings") allowing users to change how samples and cases are displayed on the fly [#709](https://github.com/SMD-Bioinformatics-Lund/gens/pull/709)
+
+### Changed
+
+- Allow skipping the trailing "/" for the API URL in the config file [#720](https://github.com/SMD-Bioinformatics-Lund/gens/pull/720)
+- Marker regions have edges. This means that even if zooming far in, a user will still get an indication in the overview plot of where one is looking [#721](https://github.com/SMD-Bioinformatics-Lund/gens/pull/721)
+- The case linkout in the track view is shown as a linkout icon instead of a clickable URL  [#721](https://github.com/SMD-Bioinformatics-Lund/gens/pull/721)
+
+### Fixed
+
+- Update GitHub workflow action versions and fix Dockerfile paths [#702](https://github.com/SMD-Bioinformatics-Lund/gens/pull/702)
+- Workaround to fix unmigrated legacy strand type in genomic features [#703](https://github.com/SMD-Bioinformatics-Lund/gens/pull/703)
+- Make sure absolute samples use absolute path [#709](https://github.com/SMD-Bioinformatics-Lund/gens/pull/709)
+- Fix such that all `--genome-build` CLI inputs also allow the shorthand `-b` flag [#709](https://github.com/SMD-Bioinformatics-Lund/gens/pull/709)
+- Prompt the user before overwriting sample annotations [#709](https://github.com/SMD-Bioinformatics-Lund/gens/pull/709)
+- Update docs reflect the latest Gens version by adding the `gens load case` and `gens update sample` command. Generally make sure that the CLI docs are up to date. [#709](https://github.com/SMD-Bioinformatics-Lund/gens/pull/709)
+
+## 4.5.0
+
+### Added
+
+- Track highlight is a multiselect, meaning that multiple annotation sources can be used for track highlights. [#686](https://github.com/SMD-Bioinformatics-Lund/gens/pull/686)
+- Load a full case from a yaml file. [#692](https://github.com/SMD-Bioinformatics-Lund/gens/pull/692)
+- Dev setup in with local containers for testing LDAP and OAuth (keycloak). LDAP can be run together with a minimal interface (LDAP admin). Keycloak provides an interface to work with OAuth based login. [#698](https://github.com/SMD-Bioinformatics-Lund/gens/pull/698)
+- Add support for using a user db+collection from the variant software. This would allow for instance a user running a Scout setup to check that users exists in that db rather than in the Gens db, omitting the need to keep the same users in both. [#698](https://github.com/SMD-Bioinformatics-Lund/gens/pull/698)
+- Session cookie used for authentication of each API request. [#693](https://github.com/SMD-Bioinformatics-Lund/gens/pull/693)
+- A case display name can optionally be added for cases together with the mandatory case ID. [#701](https://github.com/SMD-Bioinformatics-Lund/gens/pull/701)
+- PAR region example tracks. [#681](https://github.com/SMD-Bioinformatics-Lund/gens/pull/681)
+
+### Changed
+
+- Use 37 as build version instead of 19. [#682](https://github.com/SMD-Bioinformatics-Lund/gens/pull/682)
+- Simplified overview chart labels (no sample name there, BAF instead of B-allele freq). [#685](https://github.com/SMD-Bioinformatics-Lund/gens/pull/685)
+- Overview chart labels display for all chromosomes 1-22, X, Y, not only those present in the data. [#685](https://github.com/SMD-Bioinformatics-Lund/gens/pull/685)
+- Remove support from using overview JSONs. The overview is now retrieved from the "o" level in the tabix files. [#692](https://github.com/SMD-Bioinformatics-Lund/gens/pull/692)
+- Refactor db usage in backend to use a single access point, to simplify both CLI code and unit tests. [#692](https://github.com/SMD-Bioinformatics-Lund/gens/pull/692)
+- Move user management from API to CLI. [#697](https://github.com/SMD-Bioinformatics-Lund/gens/pull/697)
+- Move the `/app` endpoint to `/` and the API endpoint to `/api`. [#698](https://github.com/SMD-Bioinformatics-Lund/gens/pull/698)
+- Remove the "Remove highlights" button from the top bar. [#681](https://github.com/SMD-Bioinformatics-Lund/gens/pull/681)
+
+### Fixed
+
+- Remove config display from about page. [#680](https://github.com/SMD-Bioinformatics-Lund/gens/pull/680)
+- Configurable ignore condition for meta thresholds. [#680](https://github.com/SMD-Bioinformatics-Lund/gens/pull/680)
+- Retrieve sample build per-sample, allowing a mixture of different builds. [#682](https://github.com/SMD-Bioinformatics-Lund/gens/pull/682)
+- Fixed chromosome range syntax. [#683](https://github.com/SMD-Bioinformatics-Lund/gens/pull/683)
+- Don't list annotation tracks on about page that have been removed from the annotations collection. [#684](https://github.com/SMD-Bioinformatics-Lund/gens/pull/684)
+- Prevent crash when deleting an annotation track by adding a simple index to it. [#684](https://github.com/SMD-Bioinformatics-Lund/gens/pull/684)
+- Profile should now reset when profile version is updated. [#686](https://github.com/SMD-Bioinformatics-Lund/gens/pull/686)
+- Clear user error message when attempting to opening a sample from a build for which chromosomes haven't been loaded. [#690](https://github.com/SMD-Bioinformatics-Lund/gens/pull/690)
+- Fix such that the same case ID can be reused across different builds. [#691](https://github.com/SMD-Bioinformatics-Lund/gens/pull/691)
+- Fix latent race condition when adding new samples, which could yield tracks that did not respond to expanding. [#691](https://github.com/SMD-Bioinformatics-Lund/gens/pull/691)
+- Fix such that only samples from the relevant build are displayed in the "add samples" dropdown. [#691](https://github.com/SMD-Bioinformatics-Lund/gens/pull/691)
+- Prevent samples from being loaded into existing cases where other samples have a different build. [#691](https://github.com/SMD-Bioinformatics-Lund/gens/pull/691)
+
+## 4.4.2
+
+### Fixed
+
+- Allow ACMG classification in string format, and make Pydantic variant checks more lenient [#651](https://github.com/SMD-Bioinformatics-Lund/gens/issues/651).
+- Remove sample annotations when removing a sample [#630](https://github.com/SMD-Bioinformatics-Lund/gens/issues/630).
+- Add padding to right-hand settings menu such that advanced settings toggle won't end up beneath the horizontal scroll bar [#640](https://github.com/SMD-Bioinformatics-Lund/gens/issues/640).
+- Variant software linkout on samples page only displays when an URL is supplied [#648](https://github.com/SMD-Bioinformatics-Lund/gens/issues/648).
+- Fix docker container such that the Gens JS files are correctly included [#659](https://github.com/SMD-Bioinformatics-Lund/gens/issues/659).
+- Fix issue with user profile version updates - it should now discard the existing user profile if a new version number is found. [#691](https://github.com/SMD-Bioinformatics-Lund/gens/pull/691)
+
+## 4.4.1
+
+### Added
+
+- Optional LDAP support for login [#638](https://github.com/SMD-Bioinformatics-Lund/gens/pull/638).
+
+### Changed
+
+- Option for user to clear cache from settings side menu [#637](https://github.com/SMD-Bioinformatics-Lund/gens/pull/637).
+- Moved reset layout to base/default button out from advanced settings [#637](https://github.com/SMD-Bioinformatics-Lund/gens/pull/637).
+- Removed option to setup login only using Scout email ("simple") [#638](https://github.com/SMD-Bioinformatics-Lund/gens/pull/638).
+
+### Fixed
+
+- Skip parsing MT-coverage as it is not yet supported and can crash downstream parts of Gens [#633](https://github.com/SMD-Bioinformatics-Lund/gens/pull/633).
+- Gene track no longer ends up on bottom despite loading a profile with its position defined [#634](https://github.com/SMD-Bioinformatics-Lund/gens/pull/634).
+
 ## 4.4.0
 
 ### Added
@@ -224,6 +311,12 @@ About changelog [here](https://keepachangelog.com/en/1.0.0/)
 - Color in front-end formatter to deal with the new [0, 0, 0] format (compared to the previous "rgb(0,0,0)" format) (#265)
 - Shift start position +1 in bed and aed files to make the annotations align with the 1-indexed format used elsewhere in Gens (#265)
 
+## 3.0.2 (Solna only)
+
+### Fixed
+
+- Docker file syslog gives bad file descriptor [#101](https://github.com/Clinical-Genomics/gens/pull/101)
+
 ## 3.0.1
 
 ### Changed
@@ -338,6 +431,7 @@ About changelog [here](https://keepachangelog.com/en/1.0.0/)
 
 - Fixed cache issue that could result in chromosome information not being updated
 - Fixed max arg error when searching for some genes
+- Fixed bug that prevented updating annotation tracks
 
 ## [2.1.1 (Lund)]
 
